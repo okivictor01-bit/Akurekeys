@@ -43,18 +43,16 @@ async function tryAdmin(){
  return data&&data.role==='admin';
 }
 async function loadList(){
- const{data:props}=await sb.from('properties').select('id,title');
- const titles={};(props||[]).forEach(p=>titles[p.id]=p.title);
- const{data,error}=await sb.from('inspections').select('*').eq('status','requested').eq('fee_status','paid').order('created_at',{ascending:false});
+ const{data,error}=await sb.rpc('admin_list_inspections');
  if(error)return msg(false,'Load error: '+error.message);
  const list=document.getElementById('list');list.innerHTML='<div class="row"><b>Pending inspections (fee paid):</b></div>';
  if(!data||!data.length)list.innerHTML+='<div class="row">None right now.</div>';
  (data||[]).forEach(i=>{
   const c=document.createElement('div');c.className='card';
-  c.innerHTML='<div class="row"><b>'+(titles[i.property_id]||i.property_id)+'</b></div><div class="row">'+new Date(i.preferred_date).toLocaleString()+' • ₦'+i.fee_naira+'</div>';
+  c.innerHTML='<div class="row"><b>'+(i.property_title||'Property')+'</b></div><div class="row">'+new Date(i.preferred_date).toLocaleString()+' • ₦'+i.fee_naira+'</div><div class="row">Tenant: '+(i.tenant_email||'—')+'</div>';
   const b1=document.createElement('button');b1.innerText='Confirm';
   const b2=document.createElement('button');b2.className='red';b2.innerText='Reject';
-  const act=async(action)=>{try{const s=await session();const r=await fetch('/api/admin/confirm-inspection',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({inspection_id:i.id,action:action})});const d=await r.json();if(!r.ok)return msg(false,d.error||'Failed');msg(true,'Inspection '+d.status+'.');loadList();}catch(e){msg(false,'Error: '+e.message);}};
+  const act=async(action)=>{try{const s=await session();const r=await fetch('/api/admin/confirm-inspection',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({inspection_id:i.inspection_id,action:action})});const d=await r.json();if(!r.ok)return msg(false,d.error||'Failed');msg(true,'Inspection '+d.status+'.');loadList();}catch(e){msg(false,'Error: '+e.message);}};
   b1.onclick=()=>act('confirm');b2.onclick=()=>act('reject');
   c.appendChild(b1);c.appendChild(b2);list.appendChild(c);
  });
