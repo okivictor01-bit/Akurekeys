@@ -1,4 +1,4 @@
-// akurekeys worker v4 - access-fee flow wired to DB
+// akurekeys worker v5 - duplicate-proof access fees
 const PAYSTACK = 'https://api.paystack.co';
 
 async function authUser(env, request) {
@@ -19,6 +19,15 @@ function adminHeaders(env) {
   };
 }
 
+async function startPaystack(env, email, reference, callbackUrl) {
+  const init = await fetch(PAYSTACK + '/transaction/initialize', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + env.PAYSTACK_SECRET_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email, amount: 1000 * 100, reference: reference, callback_url: callbackUrl })
+  });
+  return await init.json();
+}
+
 export default {
   async fetch(request, env) {
     try {
@@ -34,7 +43,6 @@ export default {
         });
       }
 
-      // ---- ACCESS FEE: create DB row + start Paystack ----
       if (url.pathname === '/api/fee/initialize' && request.method === 'POST') {
         const missing = ['SUPABASE_URL','SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY','PAYSTACK_SECRET_KEY'].filter(k => !env[k]);
         if (missing.length) return Response.json({ error: 'Missing env: ' + missing.join(', ') }, { status: 500 });
@@ -55,8 +63,18 @@ export default {
           });
         }
 
-        const reference = 'AKF_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+        // duplicate-proof: check existing active fee
+        const ex = await fetch(env.SUPABASE_URL + '/rest/v1/property_access_fees?tenant_id=eq.' + user.id + '&property_id=eq.' + property_id + '&select=id,status,paystack_reference', { headers: adminHeaders(env) });
+        const rows = await ex.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          if (rows[0].status === 'paid') return Response.json({ already_paid: true });
+          // reuse the initiated row (no duplicate)
+          const data = await startPaystack(env, user.email, rows[0].paystack_reference, url.origin + '/browse.html');
+          if (!data.status) return Response.json({ error: data.message || 'Initialize failed' }, { status: 400 });
+          return Response.json({ authorization_url: data.data.authorization_url, reference: rows[0].paystack_reference });
+        }
 
+        const reference = 'AKF_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
         const ins = await fetch(env.SUPABASE_URL + '/rest/v1/property_access_fees', {
           method: 'POST',
           headers: adminHeaders(env),
@@ -64,17 +82,11 @@ export default {
         });
         if (!ins.ok) return Response.json({ error: 'DB insert failed: ' + (await ins.text()).slice(0, 200) }, { status: 500 });
 
-        const init = await fetch(PAYSTACK + '/transaction/initialize', {
-          method: 'POST',
-          headers: { Authorization: 'Bearer ' + env.PAYSTACK_SECRET_KEY, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: user.email, amount: 1000 * 100, reference: reference, callback_url: url.origin + '/browse.html' })
-        });
-        const data = await init.json();
+        const data = await startPaystack(env, user.email, reference, url.origin + '/browse.html');
         if (!data.status) return Response.json({ error: data.message || 'Initialize failed' }, { status: 400 });
         return Response.json({ authorization_url: data.data.authorization_url, reference: reference });
       }
 
-      // ---- VERIFY + mark fee paid via service role ----
       if (url.pathname === '/api/pay/verify' && request.method === 'POST') {
         const missing = ['PAYSTACK_SECRET_KEY','SUPABASE_SERVICE_ROLE_KEY','SUPABASE_URL'].filter(k => !env[k]);
         if (missing.length) return Response.json({ error: 'Missing env: ' + missing.join(', ') }, { status: 500 });
@@ -90,15 +102,17 @@ export default {
         if (!data.status) return Response.json({ error: data.message }, { status: 400 });
         const ok = data.data.status === 'success' && data.data.amount === 1000 * 100;
 
+        let dbUpdated = false;
         if (ok && reference.startsWith('AKF_')) {
-          await fetch(env.SUPABASE_URL + '/rest/v1/property_access_fees?paystack_reference=eq.' + encodeURIComponent(reference), {
+          const pr = await fetch(env.SUPABASE_URL + '/rest/v1/property_access_fees?paystack_reference=eq.' + encodeURIComponent(reference), {
             method: 'PATCH',
             headers: adminHeaders(env),
             body: JSON.stringify({ status: 'paid', paid_at: new Date().toISOString() })
           });
+          dbUpdated = pr.ok;
         }
 
-        return Response.json({ paid: ok, reference: reference, amount: data.data.amount });
+        return Response.json({ paid: ok, reference: reference, amount: data.data.amount, db_updated: dbUpdated });
       }
 
       return env.ASSETS.fetch(request);
