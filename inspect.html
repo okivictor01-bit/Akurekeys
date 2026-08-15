@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AkureKeys — Inspections</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#f6f7f9;margin:0;padding:16px}
+.card{max-width:460px;margin:0 auto 14px;background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+h1{font-size:20px}
+input{width:100%;padding:10px;margin:4px 0;border:1px solid #ddd;border-radius:8px;box-sizing:border-box}
+button{width:100%;padding:11px;margin:4px 0;border:none;border-radius:8px;background:#0a66ff;color:#fff;font-weight:bold}
+button.green{background:#16a34a}
+.msg{margin-top:8px;padding:10px;border-radius:8px;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all}
+.ok{background:#dcfce7;color:#166534}.err{background:#fee2e2;color:#991b1b}
+.hide{display:none}
+.row{font-size:14px;margin:2px 0}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="card">
+<h1>AkureKeys 🔑 Book Inspection</h1>
+<div id="authBox">
+ <input id="email" type="email" placeholder="Email">
+ <input id="pass" type="password" placeholder="Password">
+ <button id="signin">Sign in / Create account</button>
+</div>
+<div id="msg" class="msg hide"></div>
+<div id="myBox" class="card hide"><div class="row"><b>My inspections:</b></div><div id="myList"></div></div>
+<div id="list"></div>
+</div>
+<script>
+const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
+let fees={};
+function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;}
+async function session(){const{data}=await sb.auth.getSession();return data.session;}
+async function loadMy(uid){
+ const{data}=await sb.from('inspections').select('*').eq('tenant_id',uid).order('created_at',{ascending:false});
+ if(data&&data.length){document.getElementById('myBox').classList.remove('hide');document.getElementById('myList').innerHTML=data.map(i=>'<div class="row">• '+new Date(i.preferred_date).toLocaleString()+' — '+i.status+' (fee: '+i.fee_status+')</div>').join('');}
+}
+async function load(){
+ const{data}=await sb.from('inspection_fee_schedule').select('*');
+ (data||[]).forEach(f=>fees[f.property_type]=Number(f.fee_naira));
+ const{data:props,error}=await sb.from('property_listings').select('*');
+ if(error)return msg(false,'Listings error: '+error.message);
+ const list=document.getElementById('list');list.innerHTML='';
+ (props||[]).forEach(p=>{
+  const fee=fees[p.property_type]||1000;
+  const c=document.createElement('div');c.className='card';
+  c.innerHTML='<div class="row"><b>'+p.title+'</b></div><div class="row">'+p.property_type+' • inspection fee ₦'+fee+'</div><input type="datetime-local" id="dt_'+p.id+'">';
+  const b=document.createElement('button');b.className='green';b.innerText='Book & pay ₦'+fee;
+  b.onclick=async()=>{try{const s=await session();if(!s)return msg(false,'Sign in first.');const dt=document.getElementById('dt_'+p.id).value;if(!dt)return msg(false,'Pick a date & time first.');msg(true,'Creating inspection...');const r=await fetch('/api/inspection/initialize',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({property_id:p.id,preferred_date:dt})});const t=await r.text();let d;try{d=JSON.parse(t);}catch(e){return msg(false,'Non-JSON: '+t.slice(0,150));}if(!r.ok)return msg(false,d.error||t.slice(0,150));if(d.already_booked){return msg(true,'Already booked for this property — awaiting admin.');}window.location.href=d.authorization_url;}catch(e){msg(false,'Error: '+e.message);}};
+  c.appendChild(b);list.appendChild(c);
+ });
+}
+document.getElementById('signin').onclick=async()=>{try{const em=document.getElementById('email').value,pa=document.getElementById('pass').value;let{error}=await sb.auth.signInWithPassword({email:em,password:pa});if(error){({error}=await sb.auth.signUp({email:em,password:pa}));}if(error)return msg(false,error.message);document.getElementById('authBox').classList.add('hide');const s=await session();msg(true,'Signed in!');loadMy(s.user.id);load();}catch(e){msg(false,'Error: '+e.message);}};
+(async()=>{try{
+ const ref=new URLSearchParams(location.search).get('reference');
+ const s=await session();
+ if(s){document.getElementById('authBox').classList.add('hide');loadMy(s.user.id);load();}
+ if(ref&&s){const r=await fetch('/api/pay/verify',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({reference:ref})});const d=await r.json().catch(()=>({}));msg(!!d.paid,d.paid?'✅ INSPECTION FEE PAID! Status: requested — waiting for admin confirmation.':'❌ '+JSON.stringify(d));loadMy(s.user.id);}
+}catch(e){msg(false,'Load error: '+e.message);}})();
+</script>
+</body>
+</html>
