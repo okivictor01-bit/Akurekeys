@@ -3,14 +3,45 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rent Platform</title>
-<style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:90vh;background:#f4f4f4}
-.card{background:#fff;padding:30px;border-radius:12px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.1)}</style>
+<title>AkureKeys</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#f6f7f9;margin:0;padding:20px}
+.card{max-width:420px;margin:40px auto;background:#fff;border-radius:14px;padding:24px;box-shadow:0 4px 14px rgba(0,0,0,.08)}
+h1{margin:0 0 4px}
+input{width:100%;padding:11px;margin:6px 0;border:1px solid #ddd;border-radius:8px;box-sizing:border-box}
+button{width:100%;padding:12px;margin:6px 0;border:none;border-radius:8px;background:#0a66ff;color:#fff;font-weight:bold;font-size:15px}
+button.green{background:#16a34a}
+.msg{margin-top:10px;padding:10px;border-radius:8px;font-family:monospace;font-size:13px;white-space:pre-wrap;word-break:break-all}
+.ok{background:#dcfce7;color:#166534}.err{background:#fee2e2;color:#991b1b}
+.hide{display:none}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 <div class="card">
- <h2> Rent Platform</h2>
- <p>Deployment successful ✅</p>
+<h1>AkureKeys 🔑</h1>
+<p>Rent with confidence in Akure.</p>
+<div id="authBox">
+ <input id="email" type="email" placeholder="Email">
+ <input id="pass" type="password" placeholder="Password">
+ <button id="signup">Create account</button>
+ <button id="signin">Sign in</button>
 </div>
+<div id="payBox" class="hide">
+ <p id="who"></p>
+ <button id="pay" class="green">Pay ₦1,000 (TEST mode)</button>
+</div>
+<div id="msg" class="msg hide"></div>
+</div>
+<script>
+const sb = supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
+const msg=(ok,t)=>{const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;};
+async function session(){const{data}=await sb.auth.getSession();return data.session;}
+async function refreshUI(){const s=await session();if(s){document.getElementById('authBox').classList.add('hide');document.getElementById('payBox').classList.remove('hide');document.getElementById('who').innerText='Signed in as '+s.user.email;}}
+document.getElementById('signup').onclick=async()=>{const{error}=await sb.auth.signUp({email:document.getElementById('email').value,password:document.getElementById('pass').value});if(error)return msg(false,error.message);await refreshUI();msg(true,'Account created!');};
+document.getElementById('signin').onclick=async()=>{const{error}=await sb.auth.signInWithPassword({email:document.getElementById('email').value,password:document.getElementById('pass').value});if(error)return msg(false,error.message);await refreshUI();msg(true,'Signed in!');};
+document.getElementById('pay').onclick=async()=>{const s=await session();const r=await fetch('/api/pay/initialize',{method:'POST',headers:{Authorization:'Bearer '+s.access_token}});const d=await r.json();if(!r.ok)return msg(false,d.error||'Initialize failed');window.location.href=d.authorization_url;};
+(async()=>{const ref=new URLSearchParams(location.search).get('reference');if(ref){await refreshUI();const s=await session();if(!s)return msg(false,'Sign in to see your payment result.');const r=await fetch('/api/pay/verify',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({reference:ref})});const d=await r.json();msg(d.paid,d.paid?'✅ PAYMENT CONFIRMED! Reference: '+ref:'❌ Verification failed: '+JSON.stringify(d));}else{await refreshUI();}})();
+</script>
 </body>
 </html>
