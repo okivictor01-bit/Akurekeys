@@ -1,0 +1,10 @@
+{
+  "name": "akurekeys",
+  "compatibility_date": "2026-08-15",
+  "main": "worker.js",
+  "assets": {
+    "directory": ".",
+    "binding": "ASSETS"
+  },
+  "observability": { "enabled": true }
+}
