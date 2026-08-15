@@ -1,4 +1,4 @@
-// akurekeys worker v6 - rent escrow on real money
+// akurekeys worker v7 - escrow paid via secure function
 const PAYSTACK = 'https://api.paystack.co';
 
 async function authUser(env, request) {
@@ -160,15 +160,17 @@ export default {
         let dbUpdated = false;
         if (ok && reference.startsWith('AKF_')) {
           const p = await fetch(env.SUPABASE_URL + '/rest/v1/property_access_fees?paystack_reference=eq.' + encodeURIComponent(reference), {
-            method: 'PATCH', headers: adminHeaders(env),
+            method: 'PATCH',
+            headers: adminHeaders(env),
             body: JSON.stringify({ status: 'paid', paid_at: new Date().toISOString() })
           });
           dbUpdated = p.ok;
         }
         if (ok && reference.startsWith('AKR_')) {
-          const p = await fetch(env.SUPABASE_URL + '/rest/v1/escrow_transactions?paystack_reference=eq.' + encodeURIComponent(reference), {
-            method: 'PATCH', headers: adminHeaders(env),
-            body: JSON.stringify({ status: 'paid', paid_at: new Date().toISOString() })
+          const p = await fetch(env.SUPABASE_URL + '/rest/v1/rpc/confirm_escrow_paid_by_reference', {
+            method: 'POST',
+            headers: adminHeaders(env),
+            body: JSON.stringify({ p_reference: reference })
           });
           dbUpdated = p.ok;
         }
