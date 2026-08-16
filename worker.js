@@ -1,5 +1,14 @@
-// akurekeys worker v11 - payout simulation switch for test mode
+// akurekeys worker v12 - webhook backup
 const PAYSTACK = 'https://api.paystack.co';
+const enc = new TextEncoder();
+
+async function hmacB64(secret, body) {
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(body));
+  let bin = '';
+  new Uint8Array(sig).forEach(b => bin += String.fromCharCode(b));
+  return btoa(bin);
+}
 
 async function authUser(env, request) {
   const auth = request.headers.get('Authorization');
@@ -57,6 +66,56 @@ async function platformUserId(env) {
   return Array.isArray(rows) && rows.length ? rows[0].id : null;
 }
 
+async function flipPayment(env, reference) {
+  let dbUpdated = false;
+  if (reference.startsWith('AKF_')) {
+    const p = await fetch(env.SUPABASE_URL + '/rest/v1/property_access_fees?paystack_reference=eq.' + encodeURIComponent(reference), {
+      method: 'PATCH', headers: adminHeaders(env),
+      body: JSON.stringify({ status: 'paid', paid_at: new Date().toISOString() })
+    });
+    dbUpdated = p.ok;
+  }
+  if (reference.startsWith('AKR_')) {
+    const p = await fetch(env.SUPABASE_URL + '/rest/v1/rpc/confirm_escrow_paid_by_reference', {
+      method: 'POST', headers: adminHeaders(env),
+      body: JSON.stringify({ p_reference: reference })
+    });
+    dbUpdated = p.ok;
+  }
+  if (reference.startsWith('AKI_')) {
+    const p = await fetch(env.SUPABASE_URL + '/rest/v1/inspections?paystack_reference=eq.' + encodeURIComponent(reference), {
+      method: 'PATCH', headers: adminHeaders(env),
+      body: JSON.stringify({ fee_status: 'paid', paid_at: new Date().toISOString() })
+    });
+    dbUpdated = p.ok;
+  }
+  return dbUpdated;
+}
+
+async function verifyAndFlip(env, reference) {
+  let expectedKobo = 1000 * 100;
+  if (reference.startsWith('AKR_')) {
+    const er = await fetch(env.SUPABASE_URL + '/rest/v1/escrow_transactions?paystack_reference=eq.' + encodeURIComponent(reference) + '&select=amount_naira', { headers: adminHeaders(env) });
+    const erows = await safeJson(er);
+    if (Array.isArray(erows) && erows.length) expectedKobo = Number(erows[0].amount_naira) * 100;
+  }
+  if (reference.startsWith('AKI_')) {
+    const ir = await fetch(env.SUPABASE_URL + '/rest/v1/inspections?paystack_reference=eq.' + encodeURIComponent(reference) + '&select=fee_naira', { headers: adminHeaders(env) });
+    const irows = await safeJson(ir);
+    if (Array.isArray(irows) && irows.length) expectedKobo = Number(irows[0].fee_naira) * 100;
+  }
+
+  const v = await fetch(PAYSTACK + '/transaction/verify/' + encodeURIComponent(reference), {
+    headers: { Authorization: 'Bearer ' + env.PAYSTACK_SECRET_KEY }
+  });
+  const data = await safeJson(v);
+  if (!data.status) return { ok: false, error: data.message };
+  const ok = data.data.status === 'success' && data.data.amount === expectedKobo;
+  if (!ok) return { ok: false, error: 'Amount/status mismatch' };
+  const dbUpdated = await flipPayment(env, reference);
+  return { ok: true, dbUpdated: dbUpdated };
+}
+
 async function executePayout(env, payoutId, platformId) {
   const pr = await fetch(env.SUPABASE_URL + '/rest/v1/payouts?id=eq.' + payoutId + '&select=id,recipient_type,recipient_id,amount_naira,status', { headers: adminHeaders(env) });
   const pays = await safeJson(pr);
@@ -64,7 +123,6 @@ async function executePayout(env, payoutId, platformId) {
   const payout = pays[0];
   if (payout.status !== 'pending') return { ok: false, error: 'Payout already processed (' + payout.status + ')' };
 
-  // TEST-MODE SIMULATION: complete payout without real transfer
   if (env.SIMULATE_TRANSFERS === 'true') {
     const code = 'SIMULATED_' + payoutId.slice(0, 8);
     const up = await fetch(env.SUPABASE_URL + '/rest/v1/payouts?id=eq.' + payoutId, {
@@ -124,6 +182,20 @@ export default {
 
       if (url.pathname === '/health') {
         return Response.json({ ok: true });
+      }
+
+      // ---------- PAYSTACK WEBHOOK (server-to-server backup) ----------
+      if (url.pathname === '/api/webhook' && request.method === 'POST') {
+        const raw = await request.text();
+        const sig = request.headers.get('x-paystack-signature');
+        const good = sig && (sig === await hmacB64(env.PAYSTACK_SECRET_KEY, raw) || (env.PAYSTACK_WEBHOOK_SECRET && sig === await hmacB64(env.PAYSTACK_WEBHOOK_SECRET, raw)));
+        if (!good) return Response.json({ error: 'Invalid signature' }, { status: 400 });
+        let event; try { event = JSON.parse(raw); } catch (e) { return Response.json({ error: 'Bad body' }, { status: 400 }); }
+        if (event && event.event === 'charge.success' && event.data && event.data.reference) {
+          const r = await verifyAndFlip(env, event.data.reference);
+          return Response.json({ received: true, applied: !!r.ok });
+        }
+        return Response.json({ received: true });
       }
 
       // ---------- TENANT: release escrow → AUTOMATIC payouts ----------
@@ -317,7 +389,7 @@ export default {
         return Response.json({ authorization_url: data.data.authorization_url, reference: reference });
       }
 
-      // ---------- VERIFY ----------
+      // ---------- VERIFY (browser callback path) ----------
       if (url.pathname === '/api/pay/verify' && request.method === 'POST') {
         const missing = ['PAYSTACK_SECRET_KEY','SUPABASE_SERVICE_ROLE_KEY','SUPABASE_URL'].filter(k => !env[k]);
         if (missing.length) return Response.json({ error: 'Missing env: ' + missing.join(', ') }, { status: 500 });
@@ -325,50 +397,8 @@ export default {
         if (!user) return Response.json({ error: 'Sign in first.' }, { status: 401 });
         const { reference } = await request.json();
         if (!reference) return Response.json({ error: 'Missing reference' }, { status: 400 });
-
-        let expectedKobo = 1000 * 100;
-        if (reference.startsWith('AKR_')) {
-          const er = await fetch(env.SUPABASE_URL + '/rest/v1/escrow_transactions?paystack_reference=eq.' + encodeURIComponent(reference) + '&select=amount_naira', { headers: adminHeaders(env) });
-          const erows = await safeJson(er);
-          if (Array.isArray(erows) && erows.length) expectedKobo = Number(erows[0].amount_naira) * 100;
-        }
-        if (reference.startsWith('AKI_')) {
-          const ir = await fetch(env.SUPABASE_URL + '/rest/v1/inspections?paystack_reference=eq.' + encodeURIComponent(reference) + '&select=fee_naira', { headers: adminHeaders(env) });
-          const irows = await safeJson(ir);
-          if (Array.isArray(irows) && irows.length) expectedKobo = Number(irows[0].fee_naira) * 100;
-        }
-
-        const v = await fetch(PAYSTACK + '/transaction/verify/' + encodeURIComponent(reference), {
-          headers: { Authorization: 'Bearer ' + env.PAYSTACK_SECRET_KEY }
-        });
-        const data = await safeJson(v);
-        if (!data.status) return Response.json({ error: data.message }, { status: 400 });
-        const ok = data.data.status === 'success' && data.data.amount === expectedKobo;
-
-        let dbUpdated = false;
-        if (ok && reference.startsWith('AKF_')) {
-          const p = await fetch(env.SUPABASE_URL + '/rest/v1/property_access_fees?paystack_reference=eq.' + encodeURIComponent(reference), {
-            method: 'PATCH', headers: adminHeaders(env),
-            body: JSON.stringify({ status: 'paid', paid_at: new Date().toISOString() })
-          });
-          dbUpdated = p.ok;
-        }
-        if (ok && reference.startsWith('AKR_')) {
-          const p = await fetch(env.SUPABASE_URL + '/rest/v1/rpc/confirm_escrow_paid_by_reference', {
-            method: 'POST', headers: adminHeaders(env),
-            body: JSON.stringify({ p_reference: reference })
-          });
-          dbUpdated = p.ok;
-        }
-        if (ok && reference.startsWith('AKI_')) {
-          const p = await fetch(env.SUPABASE_URL + '/rest/v1/inspections?paystack_reference=eq.' + encodeURIComponent(reference), {
-            method: 'PATCH', headers: adminHeaders(env),
-            body: JSON.stringify({ fee_status: 'paid', paid_at: new Date().toISOString() })
-          });
-          dbUpdated = p.ok;
-        }
-
-        return Response.json({ paid: ok, reference: reference, amount: data.data.amount, db_updated: dbUpdated });
+        const r = await verifyAndFlip(env, reference);
+        return Response.json({ paid: !!r.ok, reference: reference, db_updated: !!r.dbUpdated, error: r.error || null });
       }
 
       return env.ASSETS.fetch(request);
