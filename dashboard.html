@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AkureKeys — Dashboard</title>
 <link rel="stylesheet" href="/akure.css">
-<style>.btnrow{display:flex;gap:8px}.btnrow .btn{flex:1;margin-top:0}</style>
+<style>.btnrow{display:flex;gap:8px}.btnrow .btn{flex:1;margin-top:0}.refcode{font-size:22px;font-weight:800;letter-spacing:2px;color:var(--brand-dark)}</style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -23,6 +23,14 @@
 <div id="msg" class="msg hide"></div>
 <div id="dash" class="hide">
  <div class="hero"><h1 id="roleLine"></h1><p id="roleLinks"></p></div>
+ <div id="agentBox" class="card hide">
+  <h2>🎟️ Your referral code</h2>
+  <p class="muted">Share with landlords — you earn 2.5% forever on every property you bring.</p>
+  <div class="rowline"><span class="refcode" id="refCode"></span><span class="pill gold">agent</span></div>
+  <button id="copyRef" class="btn btn-gold">📋 Copy referral code</button>
+  <h2 style="margin-top:14px">🏠 Landlords I onboarded</h2>
+  <div id="landlordsList"></div>
+ </div>
  <div id="addBox" class="card hide">
   <h2>🏗️ Add a property</h2>
   <p class="muted">Goes to admin for approval before tenants can see it.</p>
@@ -48,7 +56,7 @@
   <input id="b_name" placeholder="Account name">
   <button id="saveBank" class="btn btn-primary">Save bank account</button>
  </div>
- <div id="propsBox" class="card"></div>
+ <div id="propsBox" class="card hide"></div>
  <div id="inspBox" class="card"></div>
  <div id="earnBox" class="card hide"></div>
  <div id="payBox" class="card"></div>
@@ -69,20 +77,29 @@ async function render(){
  document.getElementById('roleLine').innerText=(prof?prof.full_name:s.user.email)+' — '+role;
  let links='';
  if(role==='tenant')links=L('/browse.html','Browse')+' • '+L('/inspect.html','Inspections')+' • '+L('/rent.html','Rent');
- if(role==='agent')links=L('/browse.html','Browse');
  if(role==='admin')links=L('/admin.html','Admin')+' • '+L('/browse.html','Browse');
  if(role==='landlord')links='<span style="opacity:.8">Your properties & payouts are below 👇</span>';
+ if(role==='agent')links='<span style="opacity:.8">Your network & earnings are below 👇</span>';
  document.getElementById('roleLinks').innerHTML=links;
+
+ if(role==='agent'){
+  document.getElementById('agentBox').classList.remove('hide');
+  document.getElementById('refCode').innerText='AK-'+s.user.id.replace(/-/g,'').slice(0,6).toUpperCase();
+  const{data:ll}=await sb.rpc('dashboard_my_landlords');
+  list(document.getElementById('landlordsList'),ll,x=>'<b>'+(x.landlord_name||x.landlord_email)+'</b> <span class="muted">'+x.landlord_email+'</span> • <span class="pill">'+x.property_count+' property(ies)</span>','No landlords onboarded yet — share your code!');
+ }
  if(role==='landlord'||role==='admin'){document.getElementById('addBox').classList.remove('hide');document.getElementById('bankBox').classList.remove('hide');}
  if(role==='agent'){document.getElementById('bankBox').classList.remove('hide');}
  if(role!=='tenant'){
   const{data:bank}=await sb.from('payout_accounts').select('*').eq('user_id',s.user.id).maybeSingle();
   if(bank){document.getElementById('b_bank').value=bank.bank_name||'';document.getElementById('b_num').value=bank.account_number||'';document.getElementById('b_name').value=bank.account_name||'';}
  }
- const pb=document.getElementById('propsBox');
- pb.innerHTML='<h2>🏠 '+(role==='agent'?'Listings I manage':'My properties')+'</h2>';
- const{data:props}=await sb.rpc('dashboard_properties');
- list(pb,props,p=>'<b>'+p.title+'</b> • ₦'+Number(p.annual_rent_naira).toLocaleString()+'/yr • <span class="pill '+(p.status==='approved'?'':(p.status==='pending'?'gold':'red'))+'">'+p.status+'</span>','No properties yet.');
+ if(role==='landlord'||role==='admin'){
+  const pb=document.getElementById('propsBox');pb.classList.remove('hide');
+  pb.innerHTML='<h2>🏠 My properties</h2>';
+  const{data:props}=await sb.rpc('dashboard_properties');
+  list(pb,props,p=>'<b>'+p.title+'</b> • ₦'+Number(p.annual_rent_naira).toLocaleString()+'/yr • <span class="pill '+(p.status==='approved'?'':(p.status==='pending'?'gold':'red'))+'">'+p.status+'</span>','No properties yet.');
+ }
  const ib=document.getElementById('inspBox');
  ib.innerHTML='<h2>📅 Inspections</h2>';
  const{data:insp}=await sb.rpc('dashboard_inspections');
@@ -99,6 +116,7 @@ async function render(){
  list(yb,pays,p=>'<b>'+p.recipient_type+'</b> • ₦'+Number(p.amount_naira).toLocaleString()+' • <span class="pill '+(p.status==='paid'?'':'gold')+'">'+p.status+'</span>','No payouts yet.');
  document.getElementById('dash').classList.remove('hide');
 }
+document.getElementById('copyRef').onclick=async()=>{try{const code=document.getElementById('refCode').innerText;await navigator.clipboard.writeText(code);msg(true,'✅ Referral code copied: '+code);}catch(e){msg(false,'Your code: '+code+' — copy it manually.');}};
 document.getElementById('submitProp').onclick=async()=>{try{
  const s=await session();
  const body={title:document.getElementById('p_title').value,property_type:document.getElementById('p_type').value,annual_rent_naira:document.getElementById('p_rent').value,street_address:document.getElementById('p_addr').value,area_landmark:document.getElementById('p_land').value,description:document.getElementById('p_desc').value,bedrooms:document.getElementById('p_bed').value,bathrooms:document.getElementById('p_bath').value};
