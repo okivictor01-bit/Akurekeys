@@ -16,18 +16,19 @@
 </div>
 <div id="authBox" class="card">
  <h2>Welcome back</h2>
+ <p class="muted" id="refNote" class="hide"></p>
  <input id="email" type="email" placeholder="Email">
  <input id="pass" type="password" placeholder="Password">
- <button id="signin" class="btn btn-primary">Sign in</button>
+ <button id="signin" class="btn btn-primary">Sign in / Create account</button>
 </div>
 <div id="msg" class="msg hide"></div>
 <div id="dash" class="hide">
  <div class="hero"><h1 id="roleLine"></h1><p id="roleLinks"></p></div>
  <div id="agentBox" class="card hide">
-  <h2>🎟️ Your referral code</h2>
-  <p class="muted">Share with landlords — you earn 2.5% forever on every property you bring.</p>
+  <h2>🎟️ Your referral link</h2>
+  <p class="muted">Landlords who register through your link are bound to you forever — you earn 2.5% on every property they list.</p>
   <div class="rowline"><span class="refcode" id="refCode"></span><span class="pill gold">agent</span></div>
-  <button id="copyRef" class="btn btn-gold">📋 Copy referral code</button>
+  <button id="copyRef" class="btn btn-gold">🔗 Copy my referral link</button>
   <h2 style="margin-top:14px">🏠 Landlords I onboarded</h2>
   <div id="landlordsList"></div>
  </div>
@@ -70,6 +71,17 @@ function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok
 async function session(){const{data}=await sb.auth.getSession();return data.session;}
 function list(el,rows,fmt,empty){el.innerHTML='';if(!rows||!rows.length){el.innerHTML='<div class="muted">'+empty+'</div>';return;}rows.forEach(r=>{const d=document.createElement('div');d.className='rowline';d.innerHTML='<span>'+fmt(r)+'</span>';el.appendChild(d);});}
 const L=(href,txt)=>'<a style="color:#ffe9a8" href="'+href+'">'+txt+'</a>';
+const refParam=new URLSearchParams(location.search).get('ref');
+if(refParam)localStorage.setItem('akure_ref',refParam);
+async function bindReferral(s){
+ const code=localStorage.getItem('akure_ref');
+ if(!code)return;
+ try{
+  const r=await fetch('/api/referral/bind',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({code:code})});
+  const d=await r.json();
+  if(r.ok&&d.bound)msg(true,'🤝 Welcome! You registered via an agent link — your listings will always carry their 2.5%.');
+ }catch(e){}
+}
 async function render(){
  const s=await session();
  const{data:prof}=await sb.from('profiles').select('role,full_name').eq('id',s.user.id).maybeSingle();
@@ -86,7 +98,7 @@ async function render(){
   document.getElementById('agentBox').classList.remove('hide');
   document.getElementById('refCode').innerText='AK-'+s.user.id.replace(/-/g,'').slice(0,6).toUpperCase();
   const{data:ll}=await sb.rpc('dashboard_my_landlords');
-  list(document.getElementById('landlordsList'),ll,x=>'<b>'+(x.landlord_name||x.landlord_email)+'</b> <span class="muted">'+x.landlord_email+'</span> • <span class="pill">'+x.property_count+' property(ies)</span>','No landlords onboarded yet — share your code!');
+  list(document.getElementById('landlordsList'),ll,x=>'<b>'+(x.landlord_name||x.landlord_email)+'</b> <span class="muted">'+x.landlord_email+'</span> • <span class="pill">'+x.property_count+' property(ies)</span>','No landlords onboarded yet — share your link!');
  }
  if(role==='landlord'||role==='admin'){document.getElementById('addBox').classList.remove('hide');document.getElementById('bankBox').classList.remove('hide');}
  if(role==='agent'){document.getElementById('bankBox').classList.remove('hide');}
@@ -116,23 +128,23 @@ async function render(){
  list(yb,pays,p=>'<b>'+p.recipient_type+'</b> • ₦'+Number(p.amount_naira).toLocaleString()+' • <span class="pill '+(p.status==='paid'?'':'gold')+'">'+p.status+'</span>','No payouts yet.');
  document.getElementById('dash').classList.remove('hide');
 }
-document.getElementById('copyRef').onclick=async()=>{try{const code=document.getElementById('refCode').innerText;await navigator.clipboard.writeText(code);msg(true,'✅ Referral code copied: '+code);}catch(e){msg(false,'Your code: '+code+' — copy it manually.');}};
-document.getElementById('submitProp').onclick=async()=>{try{
- const s=await session();
- const body={title:document.getElementById('p_title').value,property_type:document.getElementById('p_type').value,annual_rent_naira:document.getElementById('p_rent').value,street_address:document.getElementById('p_addr').value,area_landmark:document.getElementById('p_land').value,description:document.getElementById('p_desc').value,bedrooms:document.getElementById('p_bed').value,bathrooms:document.getElementById('p_bath').value};
- msg(true,'Submitting...');
- const r=await fetch('/api/property/submit',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify(body)});
- const d=await r.json();
- if(!r.ok)return msg(false,d.error||'Failed');
- msg(true,'✅ Submitted! Waiting for admin approval.');render();
-}catch(e){msg(false,'Error: '+e.message);}};
-document.getElementById('saveBank').onclick=async()=>{try{
- const s=await session();
- const{error}=await sb.from('payout_accounts').upsert({user_id:s.user.id,bank_name:document.getElementById('b_bank').value,account_number:document.getElementById('b_num').value,account_name:document.getElementById('b_name').value,updated_at:new Date().toISOString()},{onConflict:'user_id'});
+document.getElementById('copyRef').onclick=async()=>{try{
+ const code=document.getElementById('refCode').innerText;
+ const link=location.origin+'/dashboard.html?ref='+code;
+ await navigator.clipboard.writeText(link);
+ msg(true,'✅ Referral LINK copied — send it to landlords!');
+}catch(e){msg(false,'Your link: '+location.origin+'/dashboard.html?ref='+document.getElementById('refCode').innerText);}};
+document.getElementById('signin').onclick=async()=>{try{
+ const em=document.getElementById('email').value,pa=document.getElementById('pass').value;
+ let isNew=false;
+ let{error}=await sb.auth.signInWithPassword({email:em,password:pa});
+ if(error){({error}=await sb.auth.signUp({email:em,password:pa}));isNew=true;}
  if(error)return msg(false,error.message);
- msg(true,'✅ Bank account saved. Payouts will land here.');
+ document.getElementById('authBox').classList.add('hide');
+ const s=await session();
+ if(isNew&&localStorage.getItem('akure_ref'))await bindReferral(s);
+ msg(true,'Welcome!');render();
 }catch(e){msg(false,'Error: '+e.message);}};
-document.getElementById('signin').onclick=async()=>{try{const{error}=await sb.auth.signInWithPassword({email:document.getElementById('email').value,password:document.getElementById('pass').value});if(error)return msg(false,error.message);document.getElementById('authBox').classList.add('hide');msg(true,'Welcome!');render();}catch(e){msg(false,'Error: '+e.message);}};
 document.getElementById('out').onclick=async()=>{await sb.auth.signOut();location.reload();};
 (async()=>{const s=await session();if(s){document.getElementById('authBox').classList.add('hide');render();}})();
 </script>
