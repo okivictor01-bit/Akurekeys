@@ -3,45 +3,43 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AkureKeys — Rent</title>
-<style>
-body{font-family:system-ui,sans-serif;background:#f6f7f9;margin:0;padding:16px}
-.card{max-width:460px;margin:0 auto 14px;background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
-h1{font-size:20px}
-input{width:100%;padding:10px;margin:4px 0;border:1px solid #ddd;border-radius:8px;box-sizing:border-box}
-button{width:100%;padding:11px;margin:4px 0;border:none;border-radius:8px;background:#0a66ff;color:#fff;font-weight:bold}
-button.green{background:#16a34a}button.orange{background:#ea580c}
-.msg{margin-top:8px;padding:10px;border-radius:8px;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all}
-.ok{background:#dcfce7;color:#166534}.err{background:#fee2e2;color:#991b1b}
-.hide{display:none}
-.row{font-size:14px;margin:2px 0}
-</style>
+<title>AkureKeys — Rent & Escrow</title>
+<link rel="stylesheet" href="/akure.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-<div class="card">
-<h1>AkureKeys 🔑 Rent & Escrow</h1>
-<div id="authBox">
+<div class="wrap">
+<div class="topbar">
+ <div class="logo">🔒</div>
+ <div class="brand">AkureKeys<small>Rent in escrow</small></div>
+</div>
+<div class="hero">
+ <h1>Your rent is safe until you say so 🛡️</h1>
+ <p>Pay into escrow, inspect, and release only when satisfied. Landlord, agent and platform are paid automatically.</p>
+</div>
+<div id="authBox" class="card">
+ <h2>Sign in to rent</h2>
  <input id="email" type="email" placeholder="Email">
  <input id="pass" type="password" placeholder="Password">
- <button id="signin">Sign in / Create account</button>
+ <button id="signin" class="btn btn-primary">Sign in / Create account</button>
 </div>
 <div id="msg" class="msg hide"></div>
 <div id="escrowBox" class="card hide">
- <div class="row"><b>Your escrow:</b> <span id="escStatus"></span></div>
- <button id="release" class="orange">I'm satisfied — RELEASE & pay everyone</button>
- <button id="summary" class="green">Show 94/3.5/2.5 split</button>
+ <div class="rowline"><span><b>Your escrow</b></span><span id="escStatus" class="pill gold"></span></div>
+ <button id="release" class="btn btn-primary">😌 I'm satisfied — RELEASE & pay everyone</button>
+ <button id="summary" class="btn btn-ghost">Show 94 / 3.5 / 2.5 split</button>
 </div>
 <div id="list"></div>
+<div class="footer">Escrow = trust. Trust = AkureKeys.</div>
 </div>
 <script>
 const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
 let myEscrow=null;
-function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;}
+function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;m.classList.remove('hide');}
 async function session(){const{data}=await sb.auth.getSession();return data.session;}
 async function loadEscrow(uid){
  const{data}=await sb.from('escrow_transactions').select('*').eq('tenant_id',uid).order('created_at',{ascending:false}).limit(1);
- if(data&&data.length){myEscrow=data[0];document.getElementById('escStatus').innerText=myEscrow.status+' • ₦'+myEscrow.amount_naira;document.getElementById('escrowBox').classList.remove('hide');}
+ if(data&&data.length){myEscrow=data[0];const el=document.getElementById('escStatus');el.innerText=myEscrow.status+' • ₦'+Number(myEscrow.amount_naira).toLocaleString();el.className='pill '+(myEscrow.status==='initiated'?'gold':'');document.getElementById('escrowBox').classList.remove('hide');}
 }
 async function load(){
  const{data,error}=await sb.from('property_listings').select('*');
@@ -49,8 +47,8 @@ async function load(){
  const list=document.getElementById('list');list.innerHTML='';
  (data||[]).forEach(p=>{
   const c=document.createElement('div');c.className='card';
-  c.innerHTML='<div class="row"><b>'+p.title+'</b></div><div class="row">'+p.property_type+' • ₦'+p.annual_rent_naira+'/yr</div>';
-  const b=document.createElement('button');b.innerText='Rent — pay ₦'+p.annual_rent_naira+' into escrow';
+  c.innerHTML='<h2>'+p.title+'</h2><div class="muted">'+p.property_type+' • 📍 '+(p.area_landmark||'Akure')+'</div><div class="rowline" style="margin-top:6px"><span>Annual rent</span><b class="price">₦'+Number(p.annual_rent_naira).toLocaleString()+'/yr</b></div>';
+  const b=document.createElement('button');b.className='btn btn-gold';b.innerText='🔒 Rent — pay ₦'+Number(p.annual_rent_naira).toLocaleString()+' into escrow';
   b.onclick=async()=>{try{const s=await session();if(!s)return msg(false,'Sign in first.');msg(true,'Creating rental + escrow...');const r=await fetch('/api/rent/initialize',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({property_id:p.id})});const t=await r.text();let d;try{d=JSON.parse(t);}catch(e){return msg(false,'Non-JSON: '+t.slice(0,150));}if(!r.ok)return msg(false,d.error||t.slice(0,150));if(d.already_paid){return msg(true,'Rent already paid/released for this property.');}window.location.href=d.authorization_url;}catch(e){msg(false,'Error: '+e.message);}};
   c.appendChild(b);list.appendChild(c);
  });
@@ -72,7 +70,7 @@ document.getElementById('signin').onclick=async()=>{try{const em=document.getEle
  const ref=new URLSearchParams(location.search).get('reference');
  const s=await session();
  if(s){document.getElementById('authBox').classList.add('hide');await loadEscrow(s.user.id);load();}
- if(ref&&s){const r=await fetch('/api/pay/verify',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({reference:ref})});const d=await r.json().catch(()=>({}));msg(!!d.paid,d.paid?'✅ RENT PAID into escrow! Tap the orange RELEASE button when satisfied.':'❌ '+JSON.stringify(d));await loadEscrow(s.user.id);}
+ if(ref&&s){const r=await fetch('/api/pay/verify',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({reference:ref})});const d=await r.json().catch(()=>({}));msg(!!d.paid,d.paid?'✅ RENT PAID into escrow! Tap RELEASE when satisfied.':'❌ '+JSON.stringify(d));await loadEscrow(s.user.id);}
 }catch(e){msg(false,'Load error: '+e.message);}})();
 </script>
 </body>
