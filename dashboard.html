@@ -16,7 +16,6 @@
 </div>
 <div id="authBox" class="card">
  <h2>Welcome back</h2>
- <p class="muted" id="refNote" class="hide"></p>
  <input id="email" type="email" placeholder="Email">
  <input id="pass" type="password" placeholder="Password">
  <button id="signin" class="btn btn-primary">Sign in / Create account</button>
@@ -75,12 +74,13 @@ const refParam=new URLSearchParams(location.search).get('ref');
 if(refParam)localStorage.setItem('akure_ref',refParam);
 async function bindReferral(s){
  const code=localStorage.getItem('akure_ref');
- if(!code)return;
+ if(!code)return false;
  try{
   const r=await fetch('/api/referral/bind',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({code:code})});
   const d=await r.json();
-  if(r.ok&&d.bound)msg(true,'🤝 Welcome! You registered via an agent link — your listings will always carry their 2.5%.');
- }catch(e){}
+  if(r.ok&&d.bound){msg(true,'🤝 Registered via agent link — you are a LANDLORD. Your listings carry your agent\'s 2.5% forever.');return true;}
+  msg(false,'Referral bind failed: '+(d.error||'unknown'));return false;
+ }catch(e){msg(false,'Referral bind error: '+e.message);return false;}
 }
 async function render(){
  const s=await session();
@@ -142,8 +142,10 @@ document.getElementById('signin').onclick=async()=>{try{
  if(error)return msg(false,error.message);
  document.getElementById('authBox').classList.add('hide');
  const s=await session();
- if(isNew&&localStorage.getItem('akure_ref'))await bindReferral(s);
- msg(true,'Welcome!');render();
+ let bound=false;
+ if(isNew&&localStorage.getItem('akure_ref'))bound=await bindReferral(s);
+ if(!bound)msg(true,'Welcome!');
+ render();
 }catch(e){msg(false,'Error: '+e.message);}};
 document.getElementById('out').onclick=async()=>{await sb.auth.signOut();location.reload();};
 (async()=>{const s=await session();if(s){document.getElementById('authBox').classList.add('hide');render();}})();
