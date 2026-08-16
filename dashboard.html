@@ -4,35 +4,28 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AkureKeys — Dashboard</title>
-<style>
-body{font-family:system-ui,sans-serif;background:#f6f7f9;margin:0;padding:16px}
-.card{max-width:460px;margin:0 auto 14px;background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
-h1{font-size:20px}
-input,select{width:100%;padding:10px;margin:4px 0;border:1px solid #ddd;border-radius:8px;box-sizing:border-box}
-button{width:100%;padding:11px;margin:4px 0;border:none;border-radius:8px;background:#0a66ff;color:#fff;font-weight:bold}
-.msg{margin-top:8px;padding:10px;border-radius:8px;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all}
-.ok{background:#dcfce7;color:#166534}.err{background:#fee2e2;color:#991b1b}
-.hide{display:none}
-.row{font-size:14px;margin:3px 0}
-.h{font-size:15px;margin:10px 0 4px}
-a{color:#0a66ff}
-</style>
+<link rel="stylesheet" href="/akure.css">
+<style>.btnrow{display:flex;gap:8px}.btnrow .btn{flex:1;margin-top:0}</style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-<div class="card">
-<h1>AkureKeys 🔑 Dashboard</h1>
-<div id="authBox">
+<div class="wrap">
+<div class="topbar">
+ <div class="logo">🔑</div>
+ <div class="brand">AkureKeys<small>Your dashboard</small></div>
+</div>
+<div id="authBox" class="card">
+ <h2>Welcome back</h2>
  <input id="email" type="email" placeholder="Email">
  <input id="pass" type="password" placeholder="Password">
- <button id="signin">Sign in</button>
+ <button id="signin" class="btn btn-primary">Sign in</button>
 </div>
 <div id="msg" class="msg hide"></div>
 <div id="dash" class="hide">
- <div class="row" id="roleLine"></div>
- <div class="row"><a href="/browse.html">Browse</a> • <a href="/inspect.html">Inspections</a> • <a href="/rent.html">Rent</a> • <a href="/admin.html">Admin</a></div>
- <div id="addBox" class="hide">
-  <div class="h">🏗️ Add a property (goes to admin for approval)</div>
+ <div class="hero"><h1 id="roleLine"></h1><p><a class="link" style="color:#ffe9a8" href="/browse.html">Browse</a> • <a style="color:#ffe9a8" href="/inspect.html">Inspections</a> • <a style="color:#ffe9a8" href="/rent.html">Rent</a> • <a style="color:#ffe9a8" href="/admin.html">Admin</a></p></div>
+ <div id="addBox" class="card hide">
+  <h2>🏗️ Add a property</h2>
+  <p class="muted">Goes to admin for approval before tenants can see it.</p>
   <input id="p_title" placeholder="Title e.g. Clean self-contain at Oba Adesida">
   <select id="p_type">
    <option value="room">room</option><option value="self_contain_room">self_contain_room</option>
@@ -42,56 +35,61 @@ a{color:#0a66ff}
   </select>
   <input id="p_rent" type="number" placeholder="Annual rent (₦)">
   <input id="p_addr" placeholder="Street address">
-  <input id="p_land" placeholder="Area / landmark (Akure)">
+  <input id="p_land" placeholder="Area / landmark">
   <input id="p_desc" placeholder="Short description">
-  <input id="p_bed" type="number" placeholder="Bedrooms (optional)">
-  <input id="p_bath" type="number" placeholder="Bathrooms (optional)">
-  <button id="submitProp" style="background:#16a34a">Submit for approval</button>
+  <div class="btnrow"><input id="p_bed" type="number" placeholder="Beds"><input id="p_bath" type="number" placeholder="Baths"></div>
+  <button id="submitProp" class="btn btn-gold">Submit for approval</button>
  </div>
- <div id="bankBox" class="hide">
-  <div class="h">🏦 My bank account (for payouts)</div>
+ <div id="bankBox" class="card hide">
+  <h2>🏦 My bank account</h2>
+  <p class="muted">Where your payouts land.</p>
   <input id="b_bank" placeholder="Bank name">
   <input id="b_num" placeholder="Account number (10 digits)">
   <input id="b_name" placeholder="Account name">
-  <button id="saveBank" style="background:#16a34a">Save bank account</button>
+  <button id="saveBank" class="btn btn-primary">Save bank account</button>
  </div>
- <div id="propsBox"></div>
- <div id="inspBox"></div>
- <div id="earnBox"></div>
- <div id="payBox"></div>
- <button id="out" style="background:#64748b">Sign out</button>
+ <div id="propsBox" class="card"></div>
+ <div id="inspBox" class="card"></div>
+ <div id="earnBox" class="card hide"></div>
+ <div id="payBox" class="card"></div>
+ <button id="out" class="btn btn-gray">Sign out</button>
+ <div class="footer">AkureKeys 🔑 — every player, one home.</div>
 </div>
 </div>
 <script>
 const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
-function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;}
+function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;m.classList.remove('hide');}
 async function session(){const{data}=await sb.auth.getSession();return data.session;}
-function list(el,rows,fmt,empty){el.innerHTML='';if(!rows||!rows.length){el.innerHTML='<div class="row">'+empty+'</div>';return;}rows.forEach(r=>{const d=document.createElement('div');d.className='row';d.innerHTML='• '+fmt(r);el.appendChild(d);});}
+function list(el,rows,fmt,empty){el.innerHTML='';if(!rows||!rows.length){el.innerHTML='<div class="muted">'+empty+'</div>';return;}rows.forEach(r=>{const d=document.createElement('div');d.className='rowline';d.innerHTML='<span>'+fmt(r)+'</span>';el.appendChild(d);});}
 async function render(){
  const s=await session();
  const{data:prof}=await sb.from('profiles').select('role,full_name').eq('id',s.user.id).maybeSingle();
  const role=prof?prof.role:'tenant';
- document.getElementById('roleLine').innerHTML='<b>'+(prof?prof.full_name:s.user.email)+'</b> — signed in as <b>'+role+'</b>';
+ document.getElementById('roleLine').innerText=(prof?prof.full_name:s.user.email)+' — '+role;
  if(role==='landlord'||role==='admin'){document.getElementById('addBox').classList.remove('hide');document.getElementById('bankBox').classList.remove('hide');}
  if(role==='agent'){document.getElementById('bankBox').classList.remove('hide');}
  if(role!=='tenant'){
   const{data:bank}=await sb.from('payout_accounts').select('*').eq('user_id',s.user.id).maybeSingle();
   if(bank){document.getElementById('b_bank').value=bank.bank_name||'';document.getElementById('b_num').value=bank.account_number||'';document.getElementById('b_name').value=bank.account_name||'';}
  }
- const{data:props}=await sb.rpc('dashboard_properties');
  const pb=document.getElementById('propsBox');
- pb.innerHTML='<div class="h">🏠 '+(role==='agent'?'Listings I manage':'My properties')+'</div>';
- list(pb,props,p=>'<b>'+p.title+'</b> — '+p.property_type+' • ₦'+p.annual_rent_naira+'/yr • <b>'+p.status+'</b>','No properties yet.');
- const{data:insp}=await sb.rpc('dashboard_inspections');
+ pb.innerHTML='<h2>🏠 '+(role==='agent'?'Listings I manage':'My properties')+'</h2>';
+ const{data:props}=await sb.rpc('dashboard_properties');
+ list(pb,props,p=>'<b>'+p.title+'</b> • ₦'+Number(p.annual_rent_naira).toLocaleString()+'/yr • <span class="pill '+(p.status==='approved'?'':(p.status==='pending'?'gold':'red'))+'">'+p.status+'</span>','No properties yet.');
  const ib=document.getElementById('inspBox');
- ib.innerHTML='<div class="h">📅 Inspections</div>';
- list(ib,insp,i=>'<b>'+i.property_title+'</b> — '+new Date(i.preferred_date).toLocaleString()+' • '+i.status+' (fee '+i.fee_status+')','No inspections yet.');
- const eb=document.getElementById('earnBox');
- if(role==='agent'){const{data}=await sb.rpc('dashboard_agent_earnings');eb.innerHTML='<div class="h">🤝 My forever-2.5% ledger</div>';list(eb,data,e=>'₦'+e.amount_naira+' earned on '+new Date(e.created_at).toLocaleDateString(),'No earnings yet.');}
- const{data:pays}=await sb.rpc('dashboard_payouts');
+ ib.innerHTML='<h2>📅 Inspections</h2>';
+ const{data:insp}=await sb.rpc('dashboard_inspections');
+ list(ib,insp,i=>'<b>'+i.property_title+'</b><br><span class="muted">'+new Date(i.preferred_date).toLocaleString()+'</span> • <span class="pill '+(i.status==='confirmed'?'':(i.status==='cancelled'?'red':'gold'))+'">'+i.status+'</span>','No inspections yet.');
+ if(role==='agent'){
+  const eb=document.getElementById('earnBox');eb.classList.remove('hide');
+  eb.innerHTML='<h2>🤝 My forever-2.5% ledger</h2>';
+  const{data}=await sb.rpc('dashboard_agent_earnings');
+  list(eb,data,e=>'<b class="price">₦'+Number(e.amount_naira).toLocaleString()+'</b> <span class="muted">earned '+new Date(e.created_at).toLocaleDateString()+'</span>','No earnings yet.');
+ }
  const yb=document.getElementById('payBox');
- yb.innerHTML='<div class="h">💰 My payouts</div>';
- list(yb,pays,p=>'<b>'+p.recipient_type+'</b> — ₦'+p.amount_naira+' • '+p.status+(p.transfer_code?' ('+p.transfer_code+')':''),'No payouts yet.');
+ yb.innerHTML='<h2>💰 My payouts</h2>';
+ const{data:pays}=await sb.rpc('dashboard_payouts');
+ list(yb,pays,p=>'<b>'+p.recipient_type+'</b> • ₦'+Number(p.amount_naira).toLocaleString()+' • <span class="pill '+(p.status==='paid'?'':'gold')+'">'+p.status+'</span>','No payouts yet.');
  document.getElementById('dash').classList.remove('hide');
 }
 document.getElementById('submitProp').onclick=async()=>{try{
