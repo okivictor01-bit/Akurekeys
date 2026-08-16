@@ -1,5 +1,4 @@
-
-// akurekeys worker v13 - landlord submits, admin approves
+// akurekeys worker v14 - referral links bind agents forever
 const PAYSTACK = 'https://api.paystack.co';
 const enc = new TextEncoder();
 
@@ -185,6 +184,27 @@ export default {
         return Response.json({ ok: true });
       }
 
+      // ---------- REFERRAL: bind new landlord to agent ----------
+      if (url.pathname === '/api/referral/bind' && request.method === 'POST') {
+        const user = await authUser(env, request);
+        if (!user) return Response.json({ error: 'Sign in first.' }, { status: 401 });
+        const { code } = await request.json();
+        if (!code) return Response.json({ error: 'Missing code' }, { status: 400 });
+        const prefix = String(code).replace('AK-', '').toLowerCase();
+        const ar = await fetch(env.SUPABASE_URL + '/rest/v1/profiles?role=eq.agent&select=id', { headers: adminHeaders(env) });
+        const agents = await safeJson(ar);
+        let agentId = null;
+        (Array.isArray(agents) ? agents : []).forEach(a => { if (a.id.replace(/-/g, '').indexOf(prefix) === 0) agentId = a.id; });
+        if (!agentId) return Response.json({ error: 'Invalid referral code' }, { status: 404 });
+        await ensureProfile(env, user);
+        const up = await fetch(env.SUPABASE_URL + '/rest/v1/profiles?id=eq.' + user.id, {
+          method: 'PATCH', headers: adminHeaders(env),
+          body: JSON.stringify({ referred_by_agent_id: agentId, role: 'landlord' })
+        });
+        if (!up.ok) return Response.json({ error: 'Bind failed' }, { status: 500 });
+        return Response.json({ bound: true, agent_id: agentId });
+      }
+
       // ---------- PAYSTACK WEBHOOK ----------
       if (url.pathname === '/api/webhook' && request.method === 'POST') {
         const raw = await request.text();
@@ -199,7 +219,7 @@ export default {
         return Response.json({ received: true });
       }
 
-      // ---------- LANDLORD: submit a property ----------
+      // ---------- LANDLORD: submit a property (agent auto-attached) ----------
       if (url.pathname === '/api/property/submit' && request.method === 'POST') {
         const user = await authUser(env, request);
         if (!user) return Response.json({ error: 'Sign in first.' }, { status: 401 });
@@ -208,10 +228,16 @@ export default {
           return Response.json({ error: 'Title, rent, type and address are required' }, { status: 400 });
         }
         await ensureProfile(env, user);
+
+        const pf = await fetch(env.SUPABASE_URL + '/rest/v1/profiles?id=eq.' + user.id + '&select=referred_by_agent_id', { headers: adminHeaders(env) });
+        const pfs = await safeJson(pf);
+        const agentId = (Array.isArray(pfs) && pfs.length) ? pfs[0].referred_by_agent_id : null;
+
         const ins = await fetch(env.SUPABASE_URL + '/rest/v1/properties', {
           method: 'POST', headers: adminHeaders(env),
           body: JSON.stringify({
             landlord_id: user.id,
+            listed_by_agent_id: agentId,
             title: String(b.title),
             description: String(b.description || ''),
             property_type: b.property_type,
@@ -225,7 +251,7 @@ export default {
           })
         });
         if (!ins.ok) return Response.json({ error: 'Submit failed: ' + (await ins.text()).slice(0, 200) }, { status: 500 });
-        return Response.json({ done: true, status: 'pending' });
+        return Response.json({ done: true, status: 'pending', agent_attached: !!agentId });
       }
 
       // ---------- ADMIN: approve / reject property ----------
