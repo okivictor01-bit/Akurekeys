@@ -1,1 +1,117 @@
-jejej
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AkureKeys — Dashboard</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#f6f7f9;margin:0;padding:16px}
+.card{max-width:460px;margin:0 auto 14px;background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+h1{font-size:20px}
+input,select{width:100%;padding:10px;margin:4px 0;border:1px solid #ddd;border-radius:8px;box-sizing:border-box}
+button{width:100%;padding:11px;margin:4px 0;border:none;border-radius:8px;background:#0a66ff;color:#fff;font-weight:bold}
+.msg{margin-top:8px;padding:10px;border-radius:8px;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all}
+.ok{background:#dcfce7;color:#166534}.err{background:#fee2e2;color:#991b1b}
+.hide{display:none}
+.row{font-size:14px;margin:3px 0}
+.h{font-size:15px;margin:10px 0 4px}
+a{color:#0a66ff}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="card">
+<h1>AkureKeys 🔑 Dashboard</h1>
+<div id="authBox">
+ <input id="email" type="email" placeholder="Email">
+ <input id="pass" type="password" placeholder="Password">
+ <button id="signin">Sign in</button>
+</div>
+<div id="msg" class="msg hide"></div>
+<div id="dash" class="hide">
+ <div class="row" id="roleLine"></div>
+ <div class="row"><a href="/browse.html">Browse</a> • <a href="/inspect.html">Inspections</a> • <a href="/rent.html">Rent</a> • <a href="/admin.html">Admin</a></div>
+ <div id="addBox" class="hide">
+  <div class="h">🏗️ Add a property (goes to admin for approval)</div>
+  <input id="p_title" placeholder="Title e.g. Clean self-contain at Oba Adesida">
+  <select id="p_type">
+   <option value="room">room</option><option value="self_contain_room">self_contain_room</option>
+   <option value="room_and_parlour">room_and_parlour</option><option value="self_contain_room_and_parlour">self_contain_room_and_parlour</option>
+   <option value="two_bedroom_flat">two_bedroom_flat</option><option value="three_bedroom_flat">three_bedroom_flat</option>
+   <option value="duplex">duplex</option><option value="shop">shop</option><option value="office">office</option><option value="container">container</option>
+  </select>
+  <input id="p_rent" type="number" placeholder="Annual rent (₦)">
+  <input id="p_addr" placeholder="Street address">
+  <input id="p_land" placeholder="Area / landmark (Akure)">
+  <input id="p_desc" placeholder="Short description">
+  <input id="p_bed" type="number" placeholder="Bedrooms (optional)">
+  <input id="p_bath" type="number" placeholder="Bathrooms (optional)">
+  <button id="submitProp" style="background:#16a34a">Submit for approval</button>
+ </div>
+ <div id="bankBox" class="hide">
+  <div class="h">🏦 My bank account (for payouts)</div>
+  <input id="b_bank" placeholder="Bank name">
+  <input id="b_num" placeholder="Account number (10 digits)">
+  <input id="b_name" placeholder="Account name">
+  <button id="saveBank" style="background:#16a34a">Save bank account</button>
+ </div>
+ <div id="propsBox"></div>
+ <div id="inspBox"></div>
+ <div id="earnBox"></div>
+ <div id="payBox"></div>
+ <button id="out" style="background:#64748b">Sign out</button>
+</div>
+</div>
+<script>
+const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
+function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;}
+async function session(){const{data}=await sb.auth.getSession();return data.session;}
+function list(el,rows,fmt,empty){el.innerHTML='';if(!rows||!rows.length){el.innerHTML='<div class="row">'+empty+'</div>';return;}rows.forEach(r=>{const d=document.createElement('div');d.className='row';d.innerHTML='• '+fmt(r);el.appendChild(d);});}
+async function render(){
+ const s=await session();
+ const{data:prof}=await sb.from('profiles').select('role,full_name').eq('id',s.user.id).maybeSingle();
+ const role=prof?prof.role:'tenant';
+ document.getElementById('roleLine').innerHTML='<b>'+(prof?prof.full_name:s.user.email)+'</b> — signed in as <b>'+role+'</b>';
+ if(role==='landlord'||role==='admin'){document.getElementById('addBox').classList.remove('hide');document.getElementById('bankBox').classList.remove('hide');}
+ if(role==='agent'){document.getElementById('bankBox').classList.remove('hide');}
+ if(role!=='tenant'){
+  const{data:bank}=await sb.from('payout_accounts').select('*').eq('user_id',s.user.id).maybeSingle();
+  if(bank){document.getElementById('b_bank').value=bank.bank_name||'';document.getElementById('b_num').value=bank.account_number||'';document.getElementById('b_name').value=bank.account_name||'';}
+ }
+ const{data:props}=await sb.rpc('dashboard_properties');
+ const pb=document.getElementById('propsBox');
+ pb.innerHTML='<div class="h">🏠 '+(role==='agent'?'Listings I manage':'My properties')+'</div>';
+ list(pb,props,p=>'<b>'+p.title+'</b> — '+p.property_type+' • ₦'+p.annual_rent_naira+'/yr • <b>'+p.status+'</b>','No properties yet.');
+ const{data:insp}=await sb.rpc('dashboard_inspections');
+ const ib=document.getElementById('inspBox');
+ ib.innerHTML='<div class="h">📅 Inspections</div>';
+ list(ib,insp,i=>'<b>'+i.property_title+'</b> — '+new Date(i.preferred_date).toLocaleString()+' • '+i.status+' (fee '+i.fee_status+')','No inspections yet.');
+ const eb=document.getElementById('earnBox');
+ if(role==='agent'){const{data}=await sb.rpc('dashboard_agent_earnings');eb.innerHTML='<div class="h">🤝 My forever-2.5% ledger</div>';list(eb,data,e=>'₦'+e.amount_naira+' earned on '+new Date(e.created_at).toLocaleDateString(),'No earnings yet.');}
+ const{data:pays}=await sb.rpc('dashboard_payouts');
+ const yb=document.getElementById('payBox');
+ yb.innerHTML='<div class="h">💰 My payouts</div>';
+ list(yb,pays,p=>'<b>'+p.recipient_type+'</b> — ₦'+p.amount_naira+' • '+p.status+(p.transfer_code?' ('+p.transfer_code+')':''),'No payouts yet.');
+ document.getElementById('dash').classList.remove('hide');
+}
+document.getElementById('submitProp').onclick=async()=>{try{
+ const s=await session();
+ const body={title:document.getElementById('p_title').value,property_type:document.getElementById('p_type').value,annual_rent_naira:document.getElementById('p_rent').value,street_address:document.getElementById('p_addr').value,area_landmark:document.getElementById('p_land').value,description:document.getElementById('p_desc').value,bedrooms:document.getElementById('p_bed').value,bathrooms:document.getElementById('p_bath').value};
+ msg(true,'Submitting...');
+ const r=await fetch('/api/property/submit',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+ const d=await r.json();
+ if(!r.ok)return msg(false,d.error||'Failed');
+ msg(true,'✅ Submitted! Waiting for admin approval.');render();
+}catch(e){msg(false,'Error: '+e.message);}};
+document.getElementById('saveBank').onclick=async()=>{try{
+ const s=await session();
+ const{error}=await sb.from('payout_accounts').upsert({user_id:s.user.id,bank_name:document.getElementById('b_bank').value,account_number:document.getElementById('b_num').value,account_name:document.getElementById('b_name').value,updated_at:new Date().toISOString()},{onConflict:'user_id'});
+ if(error)return msg(false,error.message);
+ msg(true,'✅ Bank account saved. Payouts will land here.');
+}catch(e){msg(false,'Error: '+e.message);}};
+document.getElementById('signin').onclick=async()=>{try{const{error}=await sb.auth.signInWithPassword({email:document.getElementById('email').value,password:document.getElementById('pass').value});if(error)return msg(false,error.message);document.getElementById('authBox').classList.add('hide');msg(true,'Welcome!');render();}catch(e){msg(false,'Error: '+e.message);}};
+document.getElementById('out').onclick=async()=>{await sb.auth.signOut();location.reload();};
+(async()=>{const s=await session();if(s){document.getElementById('authBox').classList.add('hide');render();}})();
+</script>
+</body>
+</html>
