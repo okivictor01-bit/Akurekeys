@@ -1,0 +1,44 @@
+/* AkureKeys design system */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+:root{
+ --bg:#f6f5f1; --card:#ffffff; --ink:#14231c; --muted:#68766f;
+ --brand:#0e7a4c; --brand-dark:#0a5c3a; --gold:#f2b70a;
+ --danger:#dc2626; --line:#e7e5df; --radius:18px;
+ --shadow:0 8px 24px rgba(20,35,28,.08);
+}
+*{box-sizing:border-box}
+body{font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:var(--bg);color:var(--ink);margin:0;padding:14px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:520px;margin:0 auto}
+.topbar{display:flex;align-items:center;gap:10px;margin:4px 2px 14px}
+.logo{width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,var(--gold),#ffd75e);display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:var(--shadow)}
+.brand{font-weight:800;font-size:18px}
+.brand small{display:block;font-weight:600;color:var(--muted);font-size:11px}
+.hero{background:linear-gradient(135deg,var(--brand) 0%,var(--brand-dark) 70%);color:#fff;border-radius:var(--radius);padding:22px 18px;box-shadow:var(--shadow);margin-bottom:14px}
+.hero h1{margin:0 0 6px;font-size:24px;line-height:1.15}
+.hero p{margin:0;opacity:.85;font-size:13px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.chip{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);padding:6px 10px;border-radius:999px;font-size:11px;font-weight:600}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);margin:0 0 14px}
+.card h2{margin:0 0 4px;font-size:16px}
+.muted{color:var(--muted);font-size:12.5px}
+.price{font-weight:800;color:var(--brand-dark)}
+.pill{display:inline-block;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;background:#e8f5ee;color:var(--brand-dark)}
+.pill.gold{background:#fdf3d7;color:#8a6400}
+.pill.red{background:#fee2e2;color:#991b1b}
+.rowline{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px dashed var(--line);font-size:13.5px}
+.rowline:last-child{border-bottom:none}
+.btn{display:block;width:100%;text-align:center;border:none;border-radius:14px;padding:13px 16px;font:inherit;font-weight:700;font-size:14px;cursor:pointer;margin-top:8px;transition:transform .06s}
+.btn:active{transform:scale(.98)}
+.btn-primary{background:linear-gradient(135deg,var(--brand),var(--brand-dark));color:#fff;box-shadow:0 6px 16px rgba(14,122,76,.35)}
+.btn-gold{background:linear-gradient(135deg,var(--gold),#ffd75e);color:#3d2e00;box-shadow:0 6px 16px rgba(242,183,10,.35)}
+.btn-ghost{background:#fff;border:1.5px solid var(--line);color:var(--ink)}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-gray{background:#64748b;color:#fff}
+input,select,textarea{width:100%;padding:12px;margin:5px 0;border:1.5px solid var(--line);border-radius:12px;font:inherit;font-size:14px;background:#fff}
+input:focus,select:focus{outline:none;border-color:var(--brand)}
+.msg{margin:0 0 12px;padding:12px;border-radius:12px;font-size:12.5px;font-family:ui-monospace,monospace;white-space:pre-wrap;word-break:break-all}
+.msg.ok{background:#e8f5ee;color:#14532d;border:1px solid #bbe5cb}
+.msg.err{background:#fee2e2;color:#991b1b;border:1px solid #f6c9c9}
+.hide{display:none}
+.thumb{width:100%;height:110px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:44px;margin-bottom:10px;background:linear-gradient(135deg,#eef7f1,#f9f4e3)}
+.footer{text-align:center;color:var(--muted);font-size:11px;padding:10px 0 20px}
