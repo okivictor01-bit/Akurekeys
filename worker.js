@@ -1,4 +1,4 @@
-// akurekeys worker v10 - automatic payouts on release
+// akurekeys worker v10.1 - instrumented payouts
 const PAYSTACK = 'https://api.paystack.co';
 
 async function authUser(env, request) {
@@ -79,7 +79,8 @@ async function executePayout(env, payoutId, platformId) {
       headers: { Authorization: 'Bearer ' + env.PAYSTACK_SECRET_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'nuban', name: acct.account_name, description: 'AkureKeys payout account', bank_code: '058', account_number: acct.account_number })
     });
-    const rcd = await safeJson(rc);
+    const rct = await rc.text();
+    let rcd; try { rcd = JSON.parse(rct); } catch (e) { return { ok: false, error: 'Recipient creation HTTP ' + rc.status + ' body: [' + rct.slice(0, 200) + ']' }; }
     if (!rcd.status) return { ok: false, error: 'Recipient creation failed: ' + (rcd.message || 'unknown') };
     recipientCode = rcd.data.recipient_code;
     await fetch(env.SUPABASE_URL + '/rest/v1/payout_accounts?user_id=eq.' + payeeId, {
@@ -93,7 +94,8 @@ async function executePayout(env, payoutId, platformId) {
     headers: { Authorization: 'Bearer ' + env.PAYSTACK_SECRET_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({ source: 'balance', recipient: recipientCode, amount: Number(payout.amount_naira) * 100, reason: 'AkureKeys payout — ' + payout.recipient_type })
   });
-  const td = await safeJson(tr);
+  const trt = await tr.text();
+  let td; try { td = JSON.parse(trt); } catch (e) { return { ok: false, error: 'Transfer HTTP ' + tr.status + ' body: [' + trt.slice(0, 200) + ']' }; }
   if (!td.status) return { ok: false, error: 'Transfer failed: ' + (td.message || 'unknown') };
 
   const up = await fetch(env.SUPABASE_URL + '/rest/v1/payouts?id=eq.' + payoutId, {
