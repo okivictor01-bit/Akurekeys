@@ -7,8 +7,7 @@
     "binding": "ASSETS"
   },
   "observability": { "enabled": true },
-  "vars": {
-    "SUPABASE_URL": "https://esisngduhutxkmztlodh.supabase.co",
+  "vars": xkmztlodh.supabase.co",
     "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4",
     "PAYSTACK_PUBLIC_KEY": "pk_test_72df9a8cca4f148e985ad71de8dd5d7e605f29b61"
   }
