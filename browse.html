@@ -3,36 +3,48 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AkureKeys — Browse</title>
-<style>
-body{font-family:system-ui,sans-serif;background:#f6f7f9;margin:0;padding:16px}
-.card{max-width:460px;margin:0 auto 14px;background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
-h1{font-size:20px}
-input{width:100%;padding:10px;margin:4px 0;border:1px solid #ddd;border-radius:8px;box-sizing:border-box}
-button{width:100%;padding:11px;margin:4px 0;border:none;border-radius:8px;background:#0a66ff;color:#fff;font-weight:bold}
-button.green{background:#16a34a}
-.msg{margin-top:8px;padding:10px;border-radius:8px;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all}
-.ok{background:#dcfce7;color:#166534}.err{background:#fee2e2;color:#991b1b}
-.hide{display:none}
-.row{font-size:14px;margin:2px 0}
-</style>
+<title>AkureKeys — Browse Akure</title>
+<link rel="stylesheet" href="/akure.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-<div class="card">
-<h1>AkureKeys 🔑 Browse Akure</h1>
-<div id="authBox">
+<div class="wrap">
+<div class="topbar">
+ <div class="logo">🔑</div>
+ <div class="brand">AkureKeys<small>Verified rentals • Akure</small></div>
+</div>
+<div class="hero">
+ <h1>Find your next home in Akure 🏡</h1>
+ <p>Inspect before you pay. Rent protected in escrow. Landlord contact hidden until you unlock.</p>
+ <div class="chips"><span class="chip">🔒 Escrow protected</span><span class="chip">✅ Admin verified</span><span class="chip">📅 Inspect first</span></div>
+</div>
+<div id="authBox" class="card">
+ <h2>Sign in to start</h2>
  <input id="email" type="email" placeholder="Email">
  <input id="pass" type="password" placeholder="Password">
- <button id="signin">Sign in / Create account</button>
+ <button id="signin" class="btn btn-primary">Sign in / Create account</button>
 </div>
 <div id="msg" class="msg hide"></div>
+<div id="detailCard" class="card hide"></div>
 <div id="list"></div>
+<div class="footer">AkureKeys 🔑 — rent with confidence • Akure, Nigeria</div>
 </div>
 <script>
 const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
-function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;}
+const EMO={room:'🛏️',self_contain_room:'🏠',room_and_parlour:'🛋️',self_contain_room_and_parlour:'🏠',two_bedroom_flat:'🏢',three_bedroom_flat:'🏬',duplex:'🏡',shop:'🏪',office:'💼',container:'📦'};
+function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;m.classList.remove('hide');}
 async function session(){const{data}=await sb.auth.getSession();return data.session;}
+function showDetails(d){
+ const c=document.getElementById('detailCard');
+ c.classList.remove('hide');
+ c.innerHTML='<span class="pill gold">✅ UNLOCKED</span><h2 style="margin-top:8px">'+d.title+'</h2>'+
+ '<div class="rowline"><span>📍 Address</span><b>'+d.street_address+(d.area_landmark?' • '+d.area_landmark:'')+'</b></div>'+
+ '<div class="rowline"><span>🏷️ Type</span><b>'+d.property_type+'</b></div>'+
+ '<div class="rowline"><span>💰 Rent</span><b class="price">₦'+Number(d.annual_rent_naira).toLocaleString()+'/yr</b></div>'+
+ '<div class="rowline"><span>🛏️ Beds / 🛁 Baths</span><b>'+(d.bedrooms==null?'–':d.bedrooms)+' / '+(d.bathrooms==null?'–':d.bathrooms)+'</b></div>'+
+ '<div class="rowline"><span>📞 Contact</span><b>'+d.admin_contact+'</b></div>';
+ c.scrollIntoView({behavior:'smooth'});
+}
 async function load(){
  const{data,error}=await sb.from('property_listings').select('*');
  if(error)return msg(false,'Listings error: '+error.message);
@@ -40,11 +52,13 @@ async function load(){
  if(!data||data.length===0)return msg(false,'No approved properties yet.');
  data.forEach(p=>{
   const c=document.createElement('div');c.className='card';
-  c.innerHTML='<div class="row"><b>'+p.title+'</b></div><div class="row">'+p.property_type+' • ₦'+p.annual_rent_naira+'/yr</div><div class="row">'+(p.bedrooms||'–')+' bed • '+(p.bathrooms||'–')+' bath • '+(p.area_landmark||'Akure')+'</div>';
-  const b1=document.createElement('button');b1.className='green';b1.innerText='Unlock for ₦1,000';
+  c.innerHTML='<div class="thumb">'+(EMO[p.property_type]||'🏠')+'</div><h2>'+p.title+'</h2>'+
+  '<div class="muted">📍 '+(p.area_landmark||'Akure')+' • '+(p.bedrooms||'–')+' bed • '+(p.bathrooms||'–')+' bath</div>'+
+  '<div class="rowline" style="margin-top:6px"><span class="pill">'+p.property_type+'</span><span class="price">₦'+Number(p.annual_rent_naira).toLocaleString()+'/yr</span></div>';
+  const b1=document.createElement('button');b1.className='btn btn-gold';b1.innerText='🔓 Unlock • ₦1,000';
   b1.onclick=async()=>{try{const s=await session();if(!s)return msg(false,'Sign in first.');msg(true,'Creating payment...');const r=await fetch('/api/fee/initialize',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({property_id:p.id})});const t=await r.text();let d;try{d=JSON.parse(t);}catch(e){return msg(false,'Non-JSON: '+t.slice(0,150));}if(!r.ok)return msg(false,d.error||t.slice(0,150));if(d.already_paid){return msg(true,'Already unlocked — tap "View details". No new charge.');}window.location.href=d.authorization_url;}catch(e){msg(false,'Error: '+e.message);}};
-  const b2=document.createElement('button');b2.innerText='View details (if unlocked)';
-  b2.onclick=async()=>{try{const{data:det,error:e2}=await sb.rpc('get_property_details',{p_id:p.id});if(e2)return msg(false,'🔒 '+e2.message);msg(true,'✅ UNLOCKED:\n'+JSON.stringify(det[0],null,1));}catch(e){msg(false,'Error: '+e.message);}};
+  const b2=document.createElement('button');b2.className='btn btn-ghost';b2.innerText='View details (if unlocked)';
+  b2.onclick=async()=>{try{const{data:det,error:e2}=await sb.rpc('get_property_details',{p_id:p.id});if(e2)return msg(false,'🔒 '+e2.message);showDetails(det[0]);}catch(e){msg(false,'Error: '+e.message);}};
   c.appendChild(b1);c.appendChild(b2);list.appendChild(c);
  });
 }
