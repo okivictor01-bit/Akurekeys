@@ -76,10 +76,10 @@ async function bindReferral(s){
  const code=localStorage.getItem('akure_ref');
  if(!code)return false;
  try{
-  const r=await fetch('/api/referral/bind',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({code:code})});
-  const d=await r.json();
-  if(r.ok&&d.bound){msg(true,'🤝 Registered via agent link — you are a LANDLORD. Your listings carry your agent\'s 2.5% forever.');return true;}
-  msg(false,'Referral bind failed: '+(d.error||'unknown'));return false;
+  const{data,error}=await sb.rpc('bind_referral',{p_code:code});
+  if(error){msg(false,'Referral bind failed: '+error.message);return false;}
+  msg(true,'🤝 Registered via agent link — you are a LANDLORD. Your listings carry your agent\'s 2.5% forever.');
+  return true;
  }catch(e){msg(false,'Referral bind error: '+e.message);return false;}
 }
 async function render(){
