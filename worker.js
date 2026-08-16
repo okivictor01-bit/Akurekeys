@@ -1,3 +1,130 @@
+// akurekeys worker v9 - payouts via Paystack Transfers
+const PAYSTACK = 'https://api.paystack.co';
+
+async function authUser(env, request) {
+  const auth = request.headers.get('Authorization');
+  if (!auth) return null;
+  const r = await fetch(env.SUPABASE_URL + '/auth/v1/user', {
+    headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: auth }
+  });
+  if (!r.ok) return null;
+  return await r.json();
+}
+
+function adminHeaders(env) {
+  return {
+    apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY,
+    'Content-Type': 'application/json'
+  };
+}
+
+async function ensureProfile(env, user) {
+  const prof = await fetch(env.SUPABASE_URL + '/rest/v1/profiles?id=eq.' + user.id, { headers: adminHeaders(env) });
+  const rows = await prof.json();
+  if (Array.isArray(rows) && rows.length === 0) {
+    await fetch(env.SUPABASE_URL + '/rest/v1/profiles', {
+      method: 'POST',
+      headers: adminHeaders(env),
+      body: JSON.stringify({ id: user.id, full_name: String(user.email).split('@')[0], phone: '+2348000000000', role: 'tenant' })
+    });
+  }
+}
+
+async function initialize(env, email, amountKobo, reference, callbackUrl) {
+  const init = await fetch(PAYSTACK + '/transaction/initialize', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + env.PAYSTACK_SECRET_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email, amount: amountKobo, reference: reference, callback_url: callbackUrl })
+  });
+  return await init.json();
+}
+
+async function requireAdmin(env, user) {
+  const prof = await fetch(env.SUPABASE_URL + '/rest/v1/profiles?id=eq.' + user.id + '&select=role', { headers: adminHeaders(env) });
+  const prows = await prof.json();
+  return Array.isArray(prows) && prows.length && prows[0].role === 'admin';
+}
+
+export default {
+  async fetch(request, env) {
+    try {
+      const url = new URL(request.url);
+
+      if (url.pathname === '/health') {
+        return Response.json({ ok: true });
+      }
+
+      // ---------- ADMIN: pay a payout via Paystack Transfers ----------
+      if (url.pathname === '/api/admin/pay-payout' && request.method === 'POST') {
+        const user = await authUser(env, request);
+        if (!user) return Response.json({ error: 'Sign in first.' }, { status: 401 });
+        if (!(await requireAdmin(env, user))) return Response.json({ error: 'Admins only.' }, { status: 403 });
+
+        const { payout_id } = await request.json();
+        if (!payout_id) return Response.json({ error: 'Missing payout_id' }, { status: 400 });
+
+        const pr = await fetch(env.SUPABASE_URL + '/rest/v1/payouts?id=eq.' + payout_id + '&select=id,recipient_type,recipient_id,amount_naira,status', { headers: adminHeaders(env) });
+        const pays = await pr.json();
+        if (!Array.isArray(pays) || !pays.length) return Response.json({ error: 'Payout not found' }, { status: 404 });
+        const payout = pays[0];
+        if (payout.status !== 'pending') return Response.json({ error: 'Payout already processed (' + payout.status + ')' }, { status: 400 });
+
+        const payeeId = payout.recipient_type === 'platform' ? user.id : payout.recipient_id;
+        if (!payeeId) return Response.json({ error: 'Payout has no recipient' }, { status: 400 });
+
+        const ar = await fetch(env.SUPABASE_URL + '/rest/v1/payout_accounts?user_id=eq.' + payeeId + '&select=bank_name,account_number,account_name,paystack_recipient_code', { headers: adminHeaders(env) });
+        const accts = await ar.json();
+        if (!Array.isArray(accts) || !accts.length) return Response.json({ error: 'Recipient has no bank account on file' }, { status: 400 });
+        const acct = accts[0];
+
+        let recipientCode = acct.paystack_recipient_code;
+        if (!recipientCode) {
+          const rc = await fetch(PAYSTACK + '/transfer/recipient', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + env.PAYSTACK_SECRET_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'nuban', name: acct.account_name, description: 'AkureKeys payout account', bank_code: '058', account_number: acct.account_number })
+          });
+          const rcd = await rc.json();
+          if (!rcd.status) return Response.json({ error: 'Recipient creation failed: ' + (rcd.message || '') }, { status: 400 });
+          recipientCode = rcd.data.recipient_code;
+          await fetch(env.SUPABASE_URL + '/rest/v1/payout_accounts?user_id=eq.' + payeeId, {
+            method: 'PATCH', headers: adminHeaders(env),
+            body: JSON.stringify({ paystack_recipient_code: recipientCode })
+          });
+        }
+
+        const tr = await fetch(PAYSTACK + '/transfer', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + env.PAYSTACK_SECRET_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: 'balance', recipient: recipientCode, amount: Number(payout.amount_naira) * 100, reason: 'AkureKeys payout — ' + payout.recipient_type })
+        });
+        const td = await tr.json();
+        if (!td.status) return Response.json({ error: 'Transfer failed: ' + (td.message || '') }, { status: 400 });
+
+        const up = await fetch(env.SUPABASE_URL + '/rest/v1/payouts?id=eq.' + payout_id, {
+          method: 'PATCH', headers: adminHeaders(env),
+          body: JSON.stringify({ status: 'paid', paid_at: new Date().toISOString(), paystack_transfer_code: td.data.transfer_code || td.data.reference })
+        });
+        if (!up.ok) return Response.json({ error: 'Payout update failed' }, { status: 500 });
+
+        return Response.json({ done: true, transfer_code: td.data.transfer_code || td.data.reference });
+      }
+
+      // ---------- ADMIN: confirm / reject inspection ----------
+      if (url.pathname === '/api/admin/confirm-inspection' && request.method === 'POST') {
+        const user = await authUser(env, request);
+        if (!user) return Response.json({ error: 'Sign in first.' }, { status: 401 });
+        if (!(await requireAdmin(env, user))) return Response.json({ error: 'Admins only.' }, { status: 403 });
+        const { inspection_id, action } = await request.json();
+        if (!inspection_id || !action) return Response.json({ error: 'Missing inspection_id or action' }, { status: 400 });
+        const newStatus = action === 'confirm' ? 'confirmed' : (action === 'reject' ? 'cancelled' : null);
+        if (!newStatus) return Response.json({ error: 'action must be confirm or reject' }, { status: 400 });
+        const p = await fetch(env.SUPABASE_URL + '/rest/v1/inspections?id=eq.' + inspection_id, {
+          method: 'PATCH', headers: adminHeaders(env),
+          body: JSON.stringify({ status: newStatus, updated_at: new Date().toISOString() })
+        });
+        if (!p.ok) return Response.json({ error: 'Update failed: ' + (await p.text()).slice(0, 200) }, { status: 500 });
         return Response.json({ done: true, status: newStatus });
       }
 
