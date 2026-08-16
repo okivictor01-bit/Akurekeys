@@ -12,7 +12,7 @@ input{width:100%;padding:10px;margin:4px 0;border:1px solid #ddd;border-radius:8
 button{width:100%;padding:11px;margin:4px 0;border:none;border-radius:8px;background:#0a66ff;color:#fff;font-weight:bold}
 button.green{background:#16a34a}button.orange{background:#ea580c}
 .msg{margin-top:8px;padding:10px;border-radius:8px;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all}
-.ok{background:#dcfce7;color:#}.err{background:#fee2e2;color:#991b1b}
+.ok{background:#dcfce7;color:#166534}.err{background:#fee2e2;color:#991b1b}
 .hide{display:none}
 .row{font-size:14px;margin:2px 0}
 </style>
@@ -29,7 +29,7 @@ button.green{background:#16a34a}button.orange{background:#ea580c}
 <div id="msg" class="msg hide"></div>
 <div id="escrowBox" class="card hide">
  <div class="row"><b>Your escrow:</b> <span id="escStatus"></span></div>
- <button id="release" class="orange">I'm satisfied — RELEASE the money</button>
+ <button id="release" class="orange">I'm satisfied — RELEASE & pay everyone</button>
  <button id="summary" class="green">Show 94/3.5/2.5 split</button>
 </div>
 <div id="list"></div>
@@ -55,7 +55,17 @@ async function load(){
   c.appendChild(b);list.appendChild(c);
  });
 }
-document.getElementById('release').onclick=async()=>{try{if(!myEscrow)return msg(false,'No escrow yet.');const s=await session();const{error}=await sb.from('escrow_transactions').update({status:'released',released_by:s.user.id,released_at:new Date().toISOString()}).eq('id',myEscrow.id);if(error)return msg(false,'Release failed: '+error.message);msg(true,'✅ RELEASED! The 94/3.5/2.5 split just fired. Tap "Show split".');await loadEscrow(s.user.id);}catch(e){msg(false,'Error: '+e.message);}};
+document.getElementById('release').onclick=async()=>{try{
+ if(!myEscrow)return msg(false,'No escrow yet.');
+ const s=await session();
+ msg(true,'Releasing + paying landlord, platform & agent...');
+ const r=await fetch('/api/rent/release',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({escrow_id:myEscrow.id})});
+ const t=await r.text();let d;try{d=JSON.parse(t);}catch(e){return msg(false,'Non-JSON: '+t.slice(0,200));}
+ if(!r.ok)return msg(false,d.error||t.slice(0,200));
+ const lines=(d.payouts||[]).map(x=>x.ok?'✅ paid '+x.transfer_code:'❌ '+(x.error||'failed')).join('\n');
+ msg(true,'✅ RELEASED — automatic payouts:\n'+lines);
+ await loadEscrow(s.user.id);
+}catch(e){msg(false,'Error: '+e.message);}};
 document.getElementById('summary').onclick=async()=>{try{if(!myEscrow)return msg(false,'No escrow yet.');const{data,error}=await sb.rpc('get_release_summary',{p_escrow_id:myEscrow.id});if(error)return msg(false,error.message);msg(true,'✅ SPLIT:\n'+JSON.stringify(data,null,1));}catch(e){msg(false,'Error: '+e.message);}};
 document.getElementById('signin').onclick=async()=>{try{const em=document.getElementById('email').value,pa=document.getElementById('pass').value;let{error}=await sb.auth.signInWithPassword({email:em,password:pa});if(error){({error}=await sb.auth.signUp({email:em,password:pa}));}if(error)return msg(false,error.message);document.getElementById('authBox').classList.add('hide');msg(true,'Signed in!');const s=await session();await loadEscrow(s.user.id);load();}catch(e){msg(false,'Error: '+e.message);}};
 (async()=>{try{
