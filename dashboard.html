@@ -22,7 +22,7 @@
 </div>
 <div id="msg" class="msg hide"></div>
 <div id="dash" class="hide">
- <div class="hero"><h1 id="roleLine"></h1><p><a class="link" style="color:#ffe9a8" href="/browse.html">Browse</a> • <a style="color:#ffe9a8" href="/inspect.html">Inspections</a> • <a style="color:#ffe9a8" href="/rent.html">Rent</a> • <a style="color:#ffe9a8" href="/admin.html">Admin</a></p></div>
+ <div class="hero"><h1 id="roleLine"></h1><p id="roleLinks"></p></div>
  <div id="addBox" class="card hide">
   <h2>🏗️ Add a property</h2>
   <p class="muted">Goes to admin for approval before tenants can see it.</p>
@@ -61,11 +61,18 @@ const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhb
 function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;m.classList.remove('hide');}
 async function session(){const{data}=await sb.auth.getSession();return data.session;}
 function list(el,rows,fmt,empty){el.innerHTML='';if(!rows||!rows.length){el.innerHTML='<div class="muted">'+empty+'</div>';return;}rows.forEach(r=>{const d=document.createElement('div');d.className='rowline';d.innerHTML='<span>'+fmt(r)+'</span>';el.appendChild(d);});}
+const L=(href,txt)=>'<a style="color:#ffe9a8" href="'+href+'">'+txt+'</a>';
 async function render(){
  const s=await session();
  const{data:prof}=await sb.from('profiles').select('role,full_name').eq('id',s.user.id).maybeSingle();
  const role=prof?prof.role:'tenant';
  document.getElementById('roleLine').innerText=(prof?prof.full_name:s.user.email)+' — '+role;
+ let links='';
+ if(role==='tenant')links=L('/browse.html','Browse')+' • '+L('/inspect.html','Inspections')+' • '+L('/rent.html','Rent');
+ if(role==='agent')links=L('/browse.html','Browse');
+ if(role==='admin')links=L('/admin.html','Admin')+' • '+L('/browse.html','Browse');
+ if(role==='landlord')links='<span style="opacity:.8">Your properties & payouts are below 👇</span>';
+ document.getElementById('roleLinks').innerHTML=links;
  if(role==='landlord'||role==='admin'){document.getElementById('addBox').classList.remove('hide');document.getElementById('bankBox').classList.remove('hide');}
  if(role==='agent'){document.getElementById('bankBox').classList.remove('hide');}
  if(role!=='tenant'){
