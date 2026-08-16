@@ -4,93 +4,88 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AkureKeys — Admin</title>
-<style>
-body{font-family:system-ui,sans-serif;background:#f6f7f9;margin:0;padding:16px}
-.card{max-width:460px;margin:0 auto 14px;background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.07)}
-h1{font-size:20px}
-input{width:100%;padding:10px;margin:4px 0;border:1px solid #ddd;border-radius:8px;box-sizing:border-box}
-button{width:48%;padding:11px;margin:4px 1%;border:none;border-radius:8px;background:#16a34a;color:#fff;font-weight:bold}
-button.red{background:#dc2626}
-button.blue{background:#0a66ff;width:100%}
-.msg{margin-top:8px;padding:10px;border-radius:8px;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all}
-.ok{background:#dcfce7;color:#166534}.err{background:#fee2e2;color:#991b1b}
-.hide{display:none}
-.row{font-size:14px;margin:2px 0}
-</style>
+<link rel="stylesheet" href="/akure.css">
+<style>.btnrow{display:flex;gap:8px}.btnrow .btn{flex:1;margin-top:0}</style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-<div class="card">
-<h1>AkureKeys 👑 Admin</h1>
-<div id="authBox">
+<div class="wrap">
+<div class="topbar">
+ <div class="logo">👑</div>
+ <div class="brand">AkureKeys<small>Admin control room</small></div>
+</div>
+<div id="authBox" class="card">
+ <h2>Admin sign in</h2>
  <input id="email" type="email" placeholder="Admin email">
  <input id="pass" type="password" placeholder="Password">
- <button id="signin" class="blue">Admin sign in</button>
+ <button id="signin" class="btn btn-primary">Sign in as admin</button>
 </div>
 <div id="msg" class="msg hide"></div>
 <div id="adminBox" class="hide">
- <p class="row"><b>Signed in as admin.</b> <a href="#" id="signout">switch account</a></p>
+ <div class="hero"><h1>Control room 👑</h1><p>Approve properties • confirm inspections • release payouts. <a href="#" id="signout" style="color:#ffe9a8">switch account</a></p></div>
  <div id="propList"></div>
  <div id="list"></div>
  <div id="payList"></div>
+ <div class="footer">With great power… 🔑</div>
 </div>
 </div>
 <script>
 const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
-function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;}
+function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;m.classList.remove('hide');}
 async function session(){const{data}=await sb.auth.getSession();return data.session;}
 async function tryAdmin(){
  const s=await session();if(!s)return false;
  const{data}=await sb.from('profiles').select('role').eq('id',s.user.id).maybeSingle();
  return data&&data.role==='admin';
 }
+function cardRow(html){const c=document.createElement('div');c.className='card';c.innerHTML=html;return c;}
 async function loadProps(){
  const{data,error}=await sb.rpc('admin_list_pending_properties');
- const el=document.getElementById('propList');
- if(error){el.innerHTML='<div class="row">Properties load error: '+error.message+'</div>';return;}
- el.innerHTML='<div class="row"><b>🏗️ Pending properties:</b></div>';
- if(!data||!data.length)el.innerHTML+='<div class="row">None right now.</div>';
- (data||[]).forEach(p=>{
-  const c=document.createElement('div');c.className='card';
-  c.innerHTML='<div class="row"><b>'+p.title+'</b></div><div class="row">'+p.property_type+' • ₦'+p.annual_rent_naira+'/yr</div><div class="row">'+p.street_address+' • by '+(p.landlord_email||'—')+'</div>';
-  const b1=document.createElement('button');b1.innerText='Approve';
-  const b2=document.createElement('button');b2.className='red';b2.innerText='Reject';
+ const wrap=document.getElementById('propList');wrap.innerHTML='';
+ const h=cardRow('<h2>🏗️ Pending properties</h2>');wrap.appendChild(h);
+ if(error){h.innerHTML+='<div class="muted">Load error: '+error.message+'</div>';return;}
+ if(!data||!data.length){h.innerHTML+='<div class="muted">None right now.</div>';return;}
+ data.forEach(p=>{
+  const c=cardRow('<h2>'+p.title+'</h2><div class="muted">'+p.property_type+' • ₦'+Number(p.annual_rent_naira).toLocaleString()+'/yr<br>📍 '+p.street_address+'<br>by '+(p.landlord_email||'—')+'</div>');
+  const row=document.createElement('div');row.className='btnrow';
+  const b1=document.createElement('button');b1.className='btn btn-primary';b1.innerText='Approve';
+  const b2=document.createElement('button');b2.className='btn btn-danger';b2.innerText='Reject';
   const act=async(action)=>{try{const s=await session();const r=await fetch('/api/admin/property-decision',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({property_id:p.property_id,action:action})});const d=await r.json();if(!r.ok)return msg(false,d.error||'Failed');msg(true,'Property '+d.status+'.');loadProps();}catch(e){msg(false,'Error: '+e.message);}};
   b1.onclick=()=>act('approve');b2.onclick=()=>act('reject');
-  c.appendChild(b1);c.appendChild(b2);el.appendChild(c);
+  row.appendChild(b1);row.appendChild(b2);c.appendChild(row);wrap.appendChild(c);
  });
 }
 async function loadList(){
  const{data,error}=await sb.rpc('admin_list_inspections');
- if(error)return msg(false,'Load error: '+error.message);
- const list=document.getElementById('list');list.innerHTML='<div class="row"><b>Pending inspections (fee paid):</b></div>';
- if(!data||!data.length)list.innerHTML+='<div class="row">None right now.</div>';
- (data||[]).forEach(i=>{
-  const c=document.createElement('div');c.className='card';
-  c.innerHTML='<div class="row"><b>'+(i.property_title||'Property')+'</b></div><div class="row">'+new Date(i.preferred_date).toLocaleString()+' • ₦'+i.fee_naira+'</div><div class="row">Tenant: '+(i.tenant_email||'—')+'</div>';
-  const b1=document.createElement('button');b1.innerText='Confirm';
-  const b2=document.createElement('button');b2.className='red';b2.innerText='Reject';
+ const wrap=document.getElementById('list');wrap.innerHTML='';
+ const h=cardRow('<h2>📅 Pending inspections (fee paid)</h2>');wrap.appendChild(h);
+ if(error){h.innerHTML+='<div class="muted">Load error: '+error.message+'</div>';return;}
+ if(!data||!data.length){h.innerHTML+='<div class="muted">None right now.</div>';return;}
+ data.forEach(i=>{
+  const c=cardRow('<h2>'+(i.property_title||'Property')+'</h2><div class="muted">'+new Date(i.preferred_date).toLocaleString()+' • ₦'+Number(i.fee_naira).toLocaleString()+'<br>Tenant: '+(i.tenant_email||'—')+'</div>');
+  const row=document.createElement('div');row.className='btnrow';
+  const b1=document.createElement('button');b1.className='btn btn-primary';b1.innerText='Confirm';
+  const b2=document.createElement('button');b2.className='btn btn-danger';b2.innerText='Reject';
   const act=async(action)=>{try{const s=await session();const r=await fetch('/api/admin/confirm-inspection',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({inspection_id:i.inspection_id,action:action})});const d=await r.json();if(!r.ok)return msg(false,d.error||'Failed');msg(true,'Inspection '+d.status+'.');loadList();}catch(e){msg(false,'Error: '+e.message);}};
   b1.onclick=()=>act('confirm');b2.onclick=()=>act('reject');
-  c.appendChild(b1);c.appendChild(b2);list.appendChild(c);
+  row.appendChild(b1);row.appendChild(b2);c.appendChild(row);wrap.appendChild(c);
  });
 }
 async function loadPayouts(){
- const el=document.getElementById('payList');
  const{data,error}=await sb.rpc('admin_list_payouts');
- if(error){el.innerHTML='<div class="row">Payouts load error: '+error.message+'</div>';return;}
- el.innerHTML='<div class="row"><b>💰 Payouts ledger:</b></div>';
- if(!data||!data.length)el.innerHTML+='<div class="row">No payouts yet.</div>';
- (data||[]).forEach(p=>{
-  const c=document.createElement('div');c.className='card';
+ const wrap=document.getElementById('payList');wrap.innerHTML='';
+ const h=cardRow('<h2>💰 Payouts ledger</h2>');wrap.appendChild(h);
+ if(error){h.innerHTML+='<div class="muted">Load error: '+error.message+'</div>';return;}
+ if(!data||!data.length){h.innerHTML+='<div class="muted">No payouts yet.</div>';return;}
+ data.forEach(p=>{
   const who=p.recipient_type==='platform'?'platform (you)':(p.recipient_email||p.recipient_type);
-  c.innerHTML='<div class="row"><b>'+p.recipient_type+'</b> — '+who+'</div><div class="row">₦'+p.amount_naira+' • '+p.status+'</div>';
+  const c=cardRow('<div class="rowline"><span><b>'+p.recipient_type+'</b> — '+who+'</span><span class="price">₦'+Number(p.amount_naira).toLocaleString()+'</span></div><div class="muted">'+p.status+'</div>');
   if(p.status==='pending'){
-   const b=document.createElement('button');b.className='blue';b.innerText='Pay now via Paystack';
-   b.onclick=async()=>{try{const s=await session();msg(true,'Sending bank transfer...');const r=await fetch('/api/admin/pay-payout',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({payout_id:p.payout_id})});const d=await r.json();if(!r.ok)return msg(false,d.error||'Transfer failed');msg(true,'✅ PAID '+p.recipient_type+' ₦'+p.amount_naira+'! Transfer code: '+d.transfer_code);loadPayouts();}catch(e){msg(false,'Error: '+e.message);}};
+   const b=document.createElement('button');b.className='btn btn-gold';b.innerText='Pay now via Paystack';
+   b.onclick=async()=>{try{const s=await session();msg(true,'Sending bank transfer...');const r=await fetch('/api/admin/pay-payout',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({payout_id:p.payout_id})});const d=await r.json();if(!r.ok)return msg(false,d.error||'Transfer failed');msg(true,'✅ PAID '+p.recipient_type+' ₦'+Number(p.amount_naira).toLocaleString()+'! Code: '+d.transfer_code);loadPayouts();}catch(e){msg(false,'Error: '+e.message);}};
    c.appendChild(b);
   }
-  el.appendChild(c);
+  wrap.appendChild(c);
  });
 }
 document.getElementById('signin').onclick=async()=>{try{await sb.auth.signOut();const{error}=await sb.auth.signInWithPassword({email:document.getElementById('email').value,password:document.getElementById('pass').value});if(error)return msg(false,error.message);const ok=await tryAdmin();if(!ok)return msg(false,'This account is not an admin.');document.getElementById('authBox').classList.add('hide');document.getElementById('adminBox').classList.remove('hide');msg(true,'Welcome, Admin 👑');loadProps();loadList();loadPayouts();}catch(e){msg(false,'Error: '+e.message);}};
