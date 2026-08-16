@@ -3,45 +3,32 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AkureKeys</title>
-<style>
-body{font-family:system-ui,sans-serif;background:#f6f7f9;margin:0;padding:20px}
-.card{max-width:420px;margin:40px auto;background:#fff;border-radius:14px;padding:24px;box-shadow:0 4px 14px rgba(0,0,0,.08)}
-h1{margin:0 0 4px}
-input{width:100%;padding:11px;margin:6px 0;border:1px solid #ddd;border-radius:8px;box-sizing:border-box}
-button{width:100%;padding:12px;margin:6px 0;border:none;border-radius:8px;background:#0a66ff;color:#fff;font-weight:bold;font-size:15px}
-button.green{background:#16a34a}
-.msg{margin-top:10px;padding:10px;border-radius:8px;font-family:monospace;font-size:13px;white-space:pre-wrap;word-break:break-all}
-.ok{background:#dcfce7;color:#166534}.err{background:#fee2e2;color:#991b1b}
-.hide{display:none}
-</style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<title>AkureKeys — Rent with confidence</title>
+<link rel="stylesheet" href="/akure.css">
 </head>
 <body>
+<div class="wrap">
+<div class="topbar">
+ <div class="logo">🔑</div>
+ <div class="brand">AkureKeys<small>Verified rentals • Akure</small></div>
+</div>
+<div class="hero">
+ <h1>Rent with confidence in Akure 🏡</h1>
+ <p>No more "pay and pray." Every listing is verified, every inspection is real, and every Naira of rent sits in escrow until you're satisfied.</p>
+ <div class="chips"><span class="chip">🔒 Escrow protected</span><span class="chip">✅ Admin verified</span><span class="chip">📅 Inspect first</span><span class="chip">🤝 Agent rewarded</span></div>
+</div>
 <div class="card">
-<h1>AkureKeys 🔑</h1>
-<p>Rent with confidence in Akure.</p>
-<div id="authBox">
- <input id="email" type="email" placeholder="Email">
- <input id="pass" type="password" placeholder="Password">
- <button id="signup">Create account</button>
- <button id="signin">Sign in</button>
+ <h2>How it works</h2>
+ <div class="rowline"><span>1️⃣ Browse</span><b>See verified listings</b></div>
+ <div class="rowline"><span>2️⃣ Unlock • ₦1,000</span><b>Full details, admin contact</b></div>
+ <div class="rowline"><span>3️⃣ Inspect</span><b>See the property in person</b></div>
+ <div class="rowline"><span>4️⃣ Pay rent to escrow</span><b>Money is held safely</b></div>
+ <div class="rowline"><span>5️⃣ Release when satisfied</span><b>Landlord, agent & platform paid automatically</b></div>
 </div>
-<div id="payBox" class="hide">
- <p id="who"></p>
- <button id="pay" class="green">Pay ₦1,000 (TEST mode)</button>
+<a href="/browse.html" style="text-decoration:none"><button class="btn btn-gold">🔑 Browse properties</button></a>
+<a href="/dashboard.html" style="text-decoration:none"><button class="btn btn-primary">🏠 Landlord / Agent dashboard</button></a>
+<a href="/admin.html" style="text-decoration:none"><button class="btn btn-ghost">👑 Admin</button></a>
+<div class="footer">AkureKeys 🔑 — built for Akure, Nigeria 🇳🇬</div>
 </div>
-<div id="msg" class="msg hide"></div>
-</div>
-<script>
-const sb = supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
-function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;}
-async function session(){const{data}=await sb.auth.getSession();return data.session;}
-async function refreshUI(){try{const s=await session();if(s){document.getElementById('authBox').classList.add('hide');document.getElementById('payBox').classList.remove('hide');document.getElementById('who').innerText='Signed in as '+s.user.email;}}catch(e){msg(false,'UI error: '+e.message);}}
-document.getElementById('signup').onclick=async()=>{try{const{error}=await sb.auth.signUp({email:document.getElementById('email').value,password:document.getElementById('pass').value});if(error)return msg(false,error.message);await refreshUI();msg(true,'Account created!');}catch(e){msg(false,'Signup error: '+e.message);}};
-document.getElementById('signin').onclick=async()=>{try{const{error}=await sb.auth.signInWithPassword({email:document.getElementById('email').value,password:document.getElementById('pass').value});if(error)return msg(false,error.message);await refreshUI();msg(true,'Signed in!');}catch(e){msg(false,'Signin error: '+e.message);}};
-document.getElementById('pay').onclick=async()=>{try{msg(true,'Contacting server...');const s=await session();if(!s)return msg(false,'Not signed in.');const r=await fetch('/api/pay/initialize',{method:'POST',headers:{Authorization:'Bearer '+s.access_token}});const text=await r.text();let d;try{d=JSON.parse(text);}catch(e){return msg(false,'Server returned non-JSON (worker not updated?): '+text.slice(0,200));}if(!r.ok)return msg(false,'Initialize failed: '+(d.error||text.slice(0,200)));if(!d.authorization_url)return msg(false,'No payment URL: '+text.slice(0,200));window.location.href=d.authorization_url;}catch(e){msg(false,'Pay error: '+e.message);}};
-(async()=>{try{const ref=new URLSearchParams(location.search).get('reference');if(ref){await refreshUI();const s=await session();if(!s)return msg(false,'Sign in to see your payment result.');const r=await fetch('/api/pay/verify',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({reference:ref})});const text=await r.text();let d;try{d=JSON.parse(text);}catch(e){return msg(false,'Verify non-JSON: '+text.slice(0,200));}msg(d.paid,d.paid?'✅ PAYMENT CONFIRMED! Reference: '+ref:'❌ Not confirmed: '+text.slice(0,200));}else{await refreshUI();}}catch(e){msg(false,'Load error: '+e.message);}})();
-</script>
 </body>
 </html>
