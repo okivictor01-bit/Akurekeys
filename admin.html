@@ -31,6 +31,7 @@ button.blue{background:#0a66ff;width:100%}
 <div id="adminBox" class="hide">
  <p class="row"><b>Signed in as admin.</b> <a href="#" id="signout">switch account</a></p>
  <div id="list"></div>
+ <div id="payList"></div>
 </div>
 </div>
 <script>
@@ -57,9 +58,27 @@ async function loadList(){
   c.appendChild(b1);c.appendChild(b2);list.appendChild(c);
  });
 }
-document.getElementById('signin').onclick=async()=>{try{await sb.auth.signOut();const{error}=await sb.auth.signInWithPassword({email:document.getElementById('email').value,password:document.getElementById('pass').value});if(error)return msg(false,error.message);const ok=await tryAdmin();if(!ok)return msg(false,'This account is not an admin.');document.getElementById('authBox').classList.add('hide');document.getElementById('adminBox').classList.remove('hide');msg(true,'Welcome, Admin 👑');loadList();}catch(e){msg(false,'Error: '+e.message);}};
+async function loadPayouts(){
+ const el=document.getElementById('payList');
+ const{data,error}=await sb.rpc('admin_list_payouts');
+ if(error){el.innerHTML='<div class="row">Payouts load error: '+error.message+'</div>';return;}
+ el.innerHTML='<div class="row"><b>💰 Payouts ledger:</b></div>';
+ if(!data||!data.length)el.innerHTML+='<div class="row">No payouts yet.</div>';
+ (data||[]).forEach(p=>{
+  const c=document.createElement('div');c.className='card';
+  const who=p.recipient_type==='platform'?'platform (you)':(p.recipient_email||p.recipient_type);
+  c.innerHTML='<div class="row"><b>'+p.recipient_type+'</b> — '+who+'</div><div class="row">₦'+p.amount_naira+' • '+p.status+'</div>';
+  if(p.status==='pending'){
+   const b=document.createElement('button');b.className='blue';b.innerText='Pay now via Paystack';
+   b.onclick=async()=>{try{const s=await session();msg(true,'Sending bank transfer...');const r=await fetch('/api/admin/pay-payout',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({payout_id:p.payout_id})});const d=await r.json();if(!r.ok)return msg(false,d.error||'Transfer failed');msg(true,'✅ PAID '+p.recipient_type+' ₦'+p.amount_naira+'! Transfer code: '+d.transfer_code);loadPayouts();}catch(e){msg(false,'Error: '+e.message);}};
+   c.appendChild(b);
+  }
+  el.appendChild(c);
+ });
+}
+document.getElementById('signin').onclick=async()=>{try{await sb.auth.signOut();const{error}=await sb.auth.signInWithPassword({email:document.getElementById('email').value,password:document.getElementById('pass').value});if(error)return msg(false,error.message);const ok=await tryAdmin();if(!ok)return msg(false,'This account is not an admin.');document.getElementById('authBox').classList.add('hide');document.getElementById('adminBox').classList.remove('hide');msg(true,'Welcome, Admin 👑');loadList();loadPayouts();}catch(e){msg(false,'Error: '+e.message);}};
 document.getElementById('signout').onclick=async(e)=>{e.preventDefault();await sb.auth.signOut();location.reload();};
-(async()=>{try{if(await tryAdmin()){document.getElementById('authBox').classList.add('hide');document.getElementById('adminBox').classList.remove('hide');loadList();}}catch(e){}})();
+(async()=>{try{if(await tryAdmin()){document.getElementById('authBox').classList.add('hide');document.getElementById('adminBox').classList.remove('hide');loadList();loadPayouts();}}catch(e){}})();
 </script>
 </body>
 </html>
