@@ -15,7 +15,7 @@
 </div>
 <div class="hero">
  <h1>See it before you pay for it 👀</h1>
- <p>Pick a date, pay the inspection fee, and our admin confirms your slot with the landlord.</p>
+ <p>Pick a date, pay the inspection fee, and our admin confirms your slot. The exact address is shared once your inspection is confirmed.</p>
 </div>
 <div id="authBox" class="card">
  <h2>Sign in to book</h2>
@@ -29,16 +29,18 @@
 <div class="footer">Inspect first. Rent second. Regret never.</div>
 </div>
 <script>
-const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
+const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGtzenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
 const PILL={requested:'gold',confirmed:'',completed:'',cancelled:'red'};
 let fees={};
-function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;m.classList.remove('hide');}
+let CARDS={};
+function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;m.classList.remove('hide');m.scrollIntoView({behavior:'smooth',block:'center'});}
 async function session(){const{data}=await sb.auth.getSession();return data.session;}
 async function loadMy(uid){
  const{data}=await sb.from('inspections').select('*').eq('tenant_id',uid).order('created_at',{ascending:false});
  if(data&&data.length){document.getElementById('myBox').classList.remove('hide');document.getElementById('myList').innerHTML=data.map(i=>'<div class="rowline"><span>'+new Date(i.preferred_date).toLocaleString()+'</span><span class="pill '+(PILL[i.status]||'')+'">'+i.status+'</span></div>').join('');}
 }
 async function load(){
+ CARDS={};
  const{data}=await sb.from('inspection_fee_schedule').select('*');
  (data||[]).forEach(f=>fees[f.property_type]=Number(f.fee_naira));
  const{data:props,error}=await sb.from('property_listings').select('*');
@@ -53,7 +55,10 @@ async function load(){
   const b=document.createElement('button');b.className='btn btn-gold';b.innerText='📅 Book & pay ₦'+fee.toLocaleString();
   b.onclick=async()=>{try{const s=await session();if(!s)return msg(false,'Sign in first.');const dt=document.getElementById('dt_'+p.id).value;if(!dt)return msg(false,'Pick a date & time first.');msg(true,'Creating inspection...');const r=await fetch('/api/inspection/initialize',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({property_id:p.id,preferred_date:dt})});const t=await r.text();let d;try{d=JSON.parse(t);}catch(e){return msg(false,'Non-JSON: '+t.slice(0,150));}if(!r.ok)return msg(false,d.error||t.slice(0,150));if(d.already_booked){return msg(true,'Already booked for this property — awaiting admin.');}window.location.href=d.authorization_url;}catch(e){msg(false,'Error: '+e.message);}};
   c.appendChild(b);list.appendChild(c);
+  CARDS[p.id]=c;
  });
+ const want=new URLSearchParams(location.search).get('property');
+ if(want&&CARDS[want]){CARDS[want].scrollIntoView({behavior:'smooth',block:'center'});CARDS[want].style.outline='3px solid #f2b70a';}
 }
 document.getElementById('signin').onclick=async()=>{try{const em=document.getElementById('email').value,pa=document.getElementById('pass').value;let{error}=await sb.auth.signInWithPassword({email:em,password:pa});if(error){({error}=await sb.auth.signUp({email:em,password:pa}));}if(error)return msg(false,error.message);document.getElementById('authBox').classList.add('hide');const s=await session();msg(true,'Signed in!');loadMy(s.user.id);load();}catch(e){msg(false,'Error: '+e.message);}};
 (async()=>{try{
