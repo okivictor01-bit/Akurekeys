@@ -35,13 +35,15 @@
 <script>
 const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
 let myEscrow=null;
-function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;m.classList.remove('hide');}
+let CARDS={};
+function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;m.classList.remove('hide');m.scrollIntoView({behavior:'smooth',block:'center'});}
 async function session(){const{data}=await sb.auth.getSession();return data.session;}
 async function loadEscrow(uid){
  const{data}=await sb.from('escrow_transactions').select('*').eq('tenant_id',uid).order('created_at',{ascending:false}).limit(1);
  if(data&&data.length){myEscrow=data[0];const el=document.getElementById('escStatus');el.innerText=myEscrow.status+' • ₦'+Number(myEscrow.amount_naira).toLocaleString();el.className='pill '+(myEscrow.status==='initiated'?'gold':'');document.getElementById('escrowBox').classList.remove('hide');}
 }
 async function load(){
+ CARDS={};
  const{data,error}=await sb.from('property_listings').select('*');
  if(error)return msg(false,'Listings error: '+error.message);
  const list=document.getElementById('list');list.innerHTML='';
@@ -51,7 +53,10 @@ async function load(){
   const b=document.createElement('button');b.className='btn btn-gold';b.innerText='🔒 Rent — pay ₦'+Number(p.annual_rent_naira).toLocaleString()+' into escrow';
   b.onclick=async()=>{try{const s=await session();if(!s)return msg(false,'Sign in first.');msg(true,'Creating rental + escrow...');const r=await fetch('/api/rent/initialize',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({property_id:p.id})});const t=await r.text();let d;try{d=JSON.parse(t);}catch(e){return msg(false,'Non-JSON: '+t.slice(0,150));}if(!r.ok)return msg(false,d.error||t.slice(0,150));if(d.already_paid){return msg(true,'Rent already paid/released for this property.');}window.location.href=d.authorization_url;}catch(e){msg(false,'Error: '+e.message);}};
   c.appendChild(b);list.appendChild(c);
+  CARDS[p.id]=c;
  });
+ const want=new URLSearchParams(location.search).get('property');
+ if(want&&CARDS[want]){CARDS[want].scrollIntoView({behavior:'smooth',block:'center'});CARDS[want].style.outline='3px solid #f2b70a';}
 }
 document.getElementById('release').onclick=async()=>{try{
  if(!myEscrow)return msg(false,'No escrow yet.');
