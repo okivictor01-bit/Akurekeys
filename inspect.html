@@ -37,7 +37,10 @@ function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok
 async function session(){const{data}=await sb.auth.getSession();return data.session;}
 async function loadMy(uid){
  const{data}=await sb.from('inspections').select('*').eq('tenant_id',uid).order('created_at',{ascending:false});
- if(data&&data.length){document.getElementById('myBox').classList.remove('hide');document.getElementById('myList').innerHTML=data.map(i=>'<div class="rowline"><span>'+new Date(i.preferred_date).toLocaleString()+'</span><span class="pill '+(PILL[i.status]||'')+'">'+i.status+'</span></div>').join('');}
+ if(data&&data.length){
+  document.getElementById('myBox').classList.remove('hide');
+  document.getElementById('myList').innerHTML=data.map(i=>'<div class="rowline"><span>'+new Date(i.preferred_date).toLocaleString()+'</span><span class="pill '+(PILL[i.status]||'')+'">'+i.status+'</span></div>'+(i.status==='confirmed'?'<a href="/rent.html?property='+i.property_id+'" style="text-decoration:none"><button class="btn btn-primary">🔒 Pay rent for this home</button></a>':'')).join('');
+ }
 }
 async function load(){
  CARDS={};
