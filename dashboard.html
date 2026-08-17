@@ -15,10 +15,11 @@
  <div class="brand">AkureKeys<small>Your dashboard</small></div>
 </div>
 <div id="authBox" class="card">
- <h2>Welcome back</h2>
+ <h2>Welcome</h2>
  <input id="email" type="email" placeholder="Email">
  <input id="pass" type="password" placeholder="Password">
- <button id="signin" class="btn btn-primary">Sign in / Create account</button>
+ <button id="signin" class="btn btn-primary">Sign in</button>
+ <button id="signup" class="btn btn-gold">Create account</button>
 </div>
 <div id="msg" class="msg hide"></div>
 <div id="dash" class="hide">
@@ -195,17 +196,19 @@ document.getElementById('saveBank').onclick=async()=>{try{
  msg(true,'✅ Bank account saved. Payouts will land here.');
 }catch(e){msg(false,'Error: '+e.message);}};
 document.getElementById('signin').onclick=async()=>{try{
- const em=document.getElementById('email').value,pa=document.getElementById('pass').value;
- let isNew=false;
- let{error}=await sb.auth.signInWithPassword({email:em,password:pa});
- if(error){({error}=await sb.auth.signUp({email:em,password:pa}));isNew=true;}
+ const{error}=await sb.auth.signInWithPassword({email:document.getElementById('email').value,password:document.getElementById('pass').value});
  if(error)return msg(false,error.message);
- document.getElementById('authBox').classList.add('hide');
- const s2=await session();
+ document.getElementById('authBox').classList.add('hide');msg(true,'Welcome back!');render();
+}catch(e){msg(false,'Error: '+e.message);}};
+document.getElementById('signup').onclick=async()=>{try{
+ const{error}=await sb.auth.signUp({email:document.getElementById('email').value,password:document.getElementById('pass').value});
+ if(error)return msg(false,error.message);
+ const s=await session();
+ if(!s)return msg(true,'Account created! Check your email to confirm, then sign in.');
  let bound=false;
- if(isNew&&localStorage.getItem('akure_ref'))bound=await bindReferral(s2);
- if(!bound)msg(true,'Welcome!');
- render();
+ if(localStorage.getItem('akure_ref'))bound=await bindReferral(s);
+ if(!bound)msg(true,'Account created — welcome!');
+ document.getElementById('authBox').classList.add('hide');render();
 }catch(e){msg(false,'Error: '+e.message);}};
 document.getElementById('out').onclick=async()=>{await sb.auth.signOut();location.reload();};
 (async()=>{const s=await session();if(s){document.getElementById('authBox').classList.add('hide');render();}})();
