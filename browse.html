@@ -1,1 +1,133 @@
-jdjdjjd
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AkureKeys — Browse Akure</title>
+<link rel="stylesheet" href="/akure.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="wrap">
+<div class="topbar">
+ <div class="logo">🔑</div>
+ <div class="brand">AkureKeys<small>Verified rentals • Akure</small></div>
+</div>
+<div class="hero">
+ <h1>Find your next home in Akure 🏡</h1>
+ <p>One ₦1,000 pass unlocks EVERY listing for 15 days. Exact addresses appear only after your inspection is confirmed. Rent protected in escrow.</p>
+ <div class="chips"><span class="chip">🔓 15-day all-access pass</span><span class="chip">🔒 Escrow protected</span><span class="chip">✅ Admin verified</span><span class="chip">📅 Inspect first</span></div>
+</div>
+<div class="card">
+ <div id="passPill" class="hide" style="margin-bottom:8px"><span class="pill gold">🔓 Access pass active till <span id="passExp"></span></span></div>
+ <input id="q" type="search" placeholder="🔍 Search street / area in Akure (e.g. Oba Adesida, Ijoka)">
+ <select id="ftype">
+  <option value="">All property types</option>
+  <option value="room">room</option><option value="self_contain_room">self_contain_room</option>
+  <option value="room_and_parlour">room_and_parlour</option><option value="self_contain_room_and_parlour">self_contain_room_and_parlour</option>
+  <option value="two_bedroom_flat">two_bedroom_flat</option><option value="three_bedroom_flat">three_bedroom_flat</option>
+  <option value="duplex">duplex</option><option value="shop">shop</option><option value="office">office</option><option value="container">container</option>
+ </select>
+</div>
+<div id="authBox" class="card">
+ <h2>Welcome</h2>
+ <input id="email" type="email" placeholder="Email">
+ <input id="pass" type="password" placeholder="Password">
+ <button id="signin" class="btn btn-primary">Sign in</button>
+ <button id="signup" class="btn btn-gold">Create account</button>
+</div>
+<div id="msg" class="msg hide"></div>
+<div id="detailCard" class="card hide"></div>
+<div id="list"></div>
+<div class="footer">AkureKeys 🔑 — rent with confidence • Akure, Nigeria</div>
+</div>
+<script>
+const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
+const EMO={room:'🛏️',self_contain_room:'🏠',room_and_parlour:'🛋️',self_contain_room_and_parlour:'🏠',two_bedroom_flat:'🏢',three_bedroom_flat:'🏬',duplex:'🏡',shop:'🏪',office:'💼',container:'📦'};
+let ALL=[];
+function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;m.classList.remove('hide');m.scrollIntoView({behavior:'smooth',block:'center'});}
+async function session(){const{data}=await sb.auth.getSession();return data.session;}
+async function loadPass(){
+ const s=await session();if(!s)return;
+ const{data}=await sb.from('access_passes').select('*').eq('tenant_id',s.user.id).order('created_at',{ascending:false}).limit(1);
+ if(data&&data.length&&data[0].status==='paid'&&data[0].expires_at&&new Date(data[0].expires_at).getTime()>Date.now()){
+  document.getElementById('passPill').classList.remove('hide');
+  document.getElementById('passExp').innerText=new Date(data[0].expires_at).toLocaleDateString();
+ }
+}
+function showDetails(d,pid){
+ const c=document.getElementById('detailCard');
+ c.classList.remove('hide');
+ const ph=(d.photos||[]).map(u=>'<img src="'+u+'" style="width:100%;border-radius:12px;margin:4px 0;object-fit:cover;max-height:220px">').join('');
+ c.innerHTML='<span class="pill gold">✅ UNLOCKED</span>'+(d.status==='rented'?' <span class="pill red">🎉 RENTED</span>':'')+'<h2 style="margin-top:8px">'+d.title+'</h2>'+ph+
+ '<div class="rowline"><span>📍 Area</span><b>'+(d.area_landmark||'Akure')+' — exact address revealed at inspection</b></div>'+
+ '<div class="rowline"><span>🏷️ Type</span><b>'+d.property_type+'</b></div>'+
+ '<div class="rowline"><span>💰 Rent</span><b class="price">₦'+Number(d.annual_rent_naira).toLocaleString()+'/yr</b></div>'+
+ '<div class="rowline"><span>🛏️ Beds / 🛁 Baths</span><b>'+(d.bedrooms==null?'–':d.bedrooms)+' / '+(d.bathrooms==null?'–':d.bathrooms)+'</b></div>'+
+ '<div class="rowline"><span>📞 Contact</span><b>'+d.admin_contact+'</b></div>'+
+ (d.status==='rented'?'<div class="muted">This home has been rented 🎉</div>':'<a href="/inspect.html?property='+pid+'" style="text-decoration:none"><button class="btn btn-primary">📅 Book inspection</button></a>');
+ c.scrollIntoView({behavior:'smooth'});
+}
+function render(rows){
+ const list=document.getElementById('list');list.innerHTML='';
+ if(!rows||rows.length===0){list.innerHTML='<div class="card"><div class="muted">No properties match your search. Try another street or type.</div></div>';return;}
+ rows.forEach(p=>{
+  const rented=p.status==='rented';
+  const c=document.createElement('div');c.className='card';
+  const thumb=(p.photos&&p.photos.length)?'<img src="'+p.photos[0]+'" style="width:100%;height:130px;object-fit:cover;border-radius:14px;margin-bottom:10px'+(rented?';filter:grayscale(1)':'')+'">':'<div class="thumb">'+(EMO[p.property_type]||'🏠')+'</div>';
+  c.innerHTML=thumb+'<h2>'+p.title+'</h2>'+(rented?'<span class="pill red">🎉 RENTED</span> ':'')+
+  '<div class="muted">📍 '+(p.area_landmark||'Akure')+' • '+(p.bedrooms||'–')+' bed • '+(p.bathrooms||'–')+' bath</div>'+
+  '<div class="rowline" style="margin-top:6px"><span class="pill">'+p.property_type+'</span><span class="price">₦'+Number(p.annual_rent_naira).toLocaleString()+'/yr</span></div>';
+  if(rented){
+   const nb=document.createElement('div');nb.className='muted';nb.style.marginTop='8px';nb.innerText='This home has been rented 🎉';
+   c.appendChild(nb);
+  }else{
+   const b1=document.createElement('button');b1.className='btn btn-gold';b1.innerText='🔓 Unlock ALL • ₦1,000 (15 days)';
+   b1.onclick=async()=>{try{const s=await session();if(!s)return msg(false,'Sign in first.');msg(true,'Creating your 15-day access pass...');const r=await fetch('/api/fee/initialize',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({})});const t=await r.text();let d;try{d=JSON.parse(t);}catch(e){return msg(false,'Non-JSON: '+t.slice(0,150));}if(!r.ok)return msg(false,d.error||t.slice(0,150));if(d.already_paid){return msg(true,'✅ You already have an active 15-day pass — tap "View details" on any listing.');}window.location.href=d.authorization_url;}catch(e){msg(false,'Error: '+e.message);}};
+   const b2=document.createElement('button');b2.className='btn btn-ghost';b2.innerText='View details (if unlocked)';
+   b2.onclick=async()=>{try{const{data:det,error:e2}=await sb.rpc('get_property_details',{p_id:p.id});if(e2)return msg(false,'🔒 '+e2.message);showDetails(det[0],p.id);}catch(e){msg(false,'Error: '+e.message);}};
+   c.appendChild(b1);c.appendChild(b2);
+  }
+  list.appendChild(c);
+ });
+}
+function applyFilters(){
+ const q=(document.getElementById('q').value||'').toLowerCase();
+ const t=document.getElementById('ftype').value;
+ render(ALL.filter(p=>{
+  const okType=!t||p.property_type===t;
+  const hay=((p.area_landmark||'')+' '+(p.title||'')).toLowerCase();
+  const okQ=!q||hay.indexOf(q)!==-1;
+  return okType&&okQ;
+ }));
+}
+document.getElementById('q').addEventListener('input',applyFilters);
+document.getElementById('ftype').addEventListener('change',applyFilters);
+async function load(){
+ const{data,error}=await sb.from('property_listings').select('*');
+ if(error)return msg(false,'Listings error: '+error.message);
+ ALL=data||[];
+ applyFilters();
+}
+document.getElementById('signin').onclick=async()=>{try{
+ const{error}=await sb.auth.signInWithPassword({email:document.getElementById('email').value,password:document.getElementById('pass').value});
+ if(error)return msg(false,error.message);
+ document.getElementById('authBox').classList.add('hide');msg(true,'Welcome back!');loadPass();load();
+}catch(e){msg(false,'Error: '+e.message);}};
+document.getElementById('signup').onclick=async()=>{try{
+ const{error}=await sb.auth.signUp({email:document.getElementById('email').value,password:document.getElementById('pass').value});
+ if(error)return msg(false,error.message);
+ const s=await session();
+ if(!s)return msg(true,'Account created! Check your email to confirm, then sign in.');
+ document.getElementById('authBox').classList.add('hide');msg(true,'Account created — welcome!');loadPass();load();
+}catch(e){msg(false,'Error: '+e.message);}};
+(async()=>{try{
+ const ref=new URLSearchParams(location.search).get('reference');
+ const s=await session();
+ if(s){document.getElementById('authBox').classList.add('hide');}
+ if(ref&&s){const r=await fetch('/api/pay/verify',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({reference:ref})});const d=await r.json().catch(()=>({}));msg(!!d.paid,d.paid?'✅ ACCESS PASS ACTIVE for 15 days! Tap "View details" on any listing.':'❌ '+JSON.stringify(d));await loadPass();}
+ if(s){loadPass();load();}
+}catch(e){msg(false,'Load error: '+e.message);}})();
+</script>
+</body>
+</html>
