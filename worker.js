@@ -1,3 +1,233 @@
+};// akurekeys worker v15 - Nigerian banks + account name resolution
+const PAYSTACK = 'https://api.paystack.co';
+const enc = new TextEncoder();
+
+async function hmacB64(secret, body) {
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(body));
+  let bin = '';
+  new Uint8Array(sig).forEach(b => bin += String.fromCharCode(b));
+  return btoa(bin);
+}
+
+async function authUser(env, request) {
+  const auth = request.headers.get('Authorization');
+  if (!auth) return null;
+  const r = await fetch(env.SUPABASE_URL + '/auth/v1/user', {
+    headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: auth }
+  });
+  if (!r.ok) return null;
+  return await r.json();
+}
+
+async function safeJson(r) {
+  const t = await r.text();
+  try { return JSON.parse(t); } catch (e) { return { status: false, message: 'Non-JSON response: ' + t.slice(0, 150) }; }
+}
+
+function adminHeaders(env) {
+  return {
+    apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY,
+    'Content-Type': 'application/json'
+  };
+}
+
+async function ensureProfile(env, user) {
+  const prof = await fetch(env.SUPABASE_URL + '/rest/v1/profiles?id=eq.' + user.id, { headers: adminHeaders(env) });
+  const rows = await safeJson(prof);
+  if (Array.isArray(rows) && rows.length === 0) {
+    await fetch(env.SUPABASE_URL + '/rest/v1/profiles', {
+      method: 'POST',
+      headers: adminHeaders(env),
+      body: JSON.stringify({ id: user.id, full_name: String(user.email).split('@')[0], phone: '+2348000000000', role: 'tenant' })
+    });
+  }
+}
+
+async function initialize(env, email, amountKobo, reference, callbackUrl) {
+  const init = await fetch(PAYSTACK + '/transaction/initialize', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + env.PAYSTACK_SECRET_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email, amount: amountKobo, reference: reference, callback_url: callbackUrl })
+  });
+  return await safeJson(init);
+}
+
+async function requireAdmin(env, user) {
+  const prof = await fetch(env.SUPABASE_URL + '/rest/v1/profiles?id=eq.' + user.id + '&select=role', { headers: adminHeaders(env) });
+  const prows = await safeJson(prof);
+  return Array.isArray(prows) && prows.length && prows[0].role === 'admin';
+}
+
+async function platformUserId(env) {
+  const r = await fetch(env.SUPABASE_URL + '/rest/v1/profiles?role=eq.admin&select=id&limit=1', { headers: adminHeaders(env) });
+  const rows = await safeJson(r);
+  return Array.isArray(rows) && rows.length ? rows[0].id : null;
+}
+
+async function flipPayment(env, reference) {
+  let dbUpdated = false;
+  if (reference.startsWith('AKF_')) {
+    const p = await fetch(env.SUPABASE_URL + '/rest/v1/property_access_fees?paystack_reference=eq.' + encodeURIComponent(reference), {
+      method: 'PATCH', headers: adminHeaders(env),
+      body: JSON.stringify({ status: 'paid', paid_at: new Date().toISOString() })
+    });
+    dbUpdated = p.ok;
+  }
+  if (reference.startsWith('AKR_')) {
+    const p = await fetch(env.SUPABASE_URL + '/rest/v1/rpc/confirm_escrow_paid_by_reference', {
+      method: 'POST', headers: adminHeaders(env),
+      body: JSON.stringify({ p_reference: reference })
+    });
+    dbUpdated = p.ok;
+  }
+  if (reference.startsWith('AKI_')) {
+    const p = await fetch(env.SUPABASE_URL + '/rest/v1/inspections?paystack_reference=eq.' + encodeURIComponent(reference), {
+      method: 'PATCH', headers: adminHeaders(env),
+      body: JSON.stringify({ fee_status: 'paid', paid_at: new Date().toISOString() })
+    });
+    dbUpdated = p.ok;
+  }
+  return dbUpdated;
+}
+
+async function verifyAndFlip(env, reference) {
+  let expectedKobo = 1000 * 100;
+  if (reference.startsWith('AKR_')) {
+    const er = await fetch(env.SUPABASE_URL + '/rest/v1/escrow_transactions?paystack_reference=eq.' + encodeURIComponent(reference) + '&select=amount_naira', { headers: adminHeaders(env) });
+    const erows = await safeJson(er);
+    if (Array.isArray(erows) && erows.length) expectedKobo = Number(erows[0].amount_naira) * 100;
+  }
+  if (reference.startsWith('AKI_')) {
+    const ir = await fetch(env.SUPABASE_URL + '/rest/v1/inspections?paystack_reference=eq.' + encodeURIComponent(reference) + '&select=fee_naira', { headers: adminHeaders(env) });
+    const irows = await safeJson(ir);
+    if (Array.isArray(irows) && irows.length) expectedKobo = Number(irows[0].fee_naira) * 100;
+  }
+
+  const v = await fetch(PAYSTACK + '/transaction/verify/' + encodeURIComponent(reference), {
+    headers: { Authorization: 'Bearer ' + env.PAYSTACK_SECRET_KEY }
+  });
+  const data = await safeJson(v);
+  if (!data.status) return { ok: false, error: data.message };
+  const ok = data.data.status === 'success' && data.data.amount === expectedKobo;
+  if (!ok) return { ok: false, error: 'Amount/status mismatch' };
+  const dbUpdated = await flipPayment(env, reference);
+  return { ok: true, dbUpdated: dbUpdated };
+}
+
+async function executePayout(env, payoutId, platformId) {
+  const pr = await fetch(env.SUPABASE_URL + '/rest/v1/payouts?id=eq.' + payoutId + '&select=id,recipient_type,recipient_id,amount_naira,status', { headers: adminHeaders(env) });
+  const pays = await safeJson(pr);
+  if (!Array.isArray(pays) || !pays.length) return { ok: false, error: 'Payout not found' };
+  const payout = pays[0];
+  if (payout.status !== 'pending') return { ok: false, error: 'Payout already processed (' + payout.status + ')' };
+
+  if (env.SIMULATE_TRANSFERS === 'true') {
+    const code = 'SIMULATED_' + payoutId.slice(0, 8);
+    const up = await fetch(env.SUPABASE_URL + '/rest/v1/payouts?id=eq.' + payoutId, {
+      method: 'PATCH', headers: adminHeaders(env),
+      body: JSON.stringify({ status: 'paid', paid_at: new Date().toISOString(), paystack_transfer_code: code })
+    });
+    if (!up.ok) return { ok: false, error: 'Payout update failed' };
+    return { ok: true, transfer_code: code };
+  }
+
+  const payeeId = payout.recipient_type === 'platform' ? platformId : payout.recipient_id;
+  if (!payeeId) return { ok: false, error: 'Payout has no recipient' };
+
+  const ar = await fetch(env.SUPABASE_URL + '/rest/v1/payout_accounts?user_id=eq.' + payeeId + '&select=account_number,account_name,paystack_recipient_code', { headers: adminHeaders(env) });
+  const accts = await safeJson(ar);
+  if (!Array.isArray(accts) || !accts.length) return { ok: false, error: 'Recipient has no bank account on file' };
+  const acct = accts[0];
+
+  let recipientCode = acct.paystack_recipient_code;
+  if (!recipientCode) {
+    const rc = await fetch(PAYSTACK + '/transfer/recipient', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + env.PAYSTACK_SECRET_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'nuban', name: acct.account_name, description: 'AkureKeys payout account', bank_code: '058', account_number: acct.account_number })
+    });
+    const rct = await rc.text();
+    let rcd; try { rcd = JSON.parse(rct); } catch (e) { return { ok: false, error: 'Recipient creation HTTP ' + rc.status + ' body: [' + rct.slice(0, 200) + ']' }; }
+    if (!rcd.status) return { ok: false, error: 'Recipient creation failed: ' + (rcd.message || 'unknown') };
+    recipientCode = rcd.data.recipient_code;
+    await fetch(env.SUPABASE_URL + '/rest/v1/payout_accounts?user_id=eq.' + payeeId, {
+      method: 'PATCH', headers: adminHeaders(env),
+      body: JSON.stringify({ paystack_recipient_code: recipientCode })
+    });
+  }
+
+  const tr = await fetch(PAYSTACK + '/transfer', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + env.PAYSTACK_SECRET_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: 'balance', recipient: recipientCode, amount: Number(payout.amount_naira) * 100, reason: 'AkureKeys payout — ' + payout.recipient_type })
+  });
+  const trt = await tr.text();
+  let td; try { td = JSON.parse(trt); } catch (e) { return { ok: false, error: 'Transfer HTTP ' + tr.status + ' body: [' + trt.slice(0, 200) + ']' }; }
+  if (!td.status) return { ok: false, error: 'Transfer failed: ' + (td.message || 'unknown') };
+
+  const up = await fetch(env.SUPABASE_URL + '/rest/v1/payouts?id=eq.' + payoutId, {
+    method: 'PATCH', headers: adminHeaders(env),
+    body: JSON.stringify({ status: 'paid', paid_at: new Date().toISOString(), paystack_transfer_code: td.data.transfer_code || td.data.reference })
+  });
+  if (!up.ok) return { ok: false, error: 'Payout update failed' };
+  return { ok: true, transfer_code: td.data.transfer_code || td.data.reference };
+}
+
+export default {
+  async fetch(request, env) {
+    try {
+      const url = new URL(request.url);
+
+      if (url.pathname === '/health') {
+        return Response.json({ ok: true });
+      }
+
+      // ---------- NIGERIAN BANKS LIST ----------
+      if (url.pathname === '/api/banks' && request.method === 'GET') {
+        const r = await fetch(PAYSTACK + '/bank?country=nigeria&paystack=true', {
+          headers: { Authorization: 'Bearer ' + env.PAYSTACK_SECRET_KEY }
+        });
+        const d = await safeJson(r);
+        if (!d.status) return Response.json({ error: d.message || 'Banks list failed' }, { status: 400 });
+        return Response.json({ banks: (d.data || []).map(b => ({ name: b.name, code: b.code })) });
+      }
+
+      // ---------- RESOLVE ACCOUNT NAME ----------
+      if (url.pathname === '/api/bank/resolve' && request.method === 'GET') {
+        const acc = url.searchParams.get('account_number');
+        const code = url.searchParams.get('bank_code');
+        if (!acc || !code) return Response.json({ error: 'Missing account_number or bank_code' }, { status: 400 });
+        const r = await fetch(PAYSTACK + '/bank/resolve?account_number=' + encodeURIComponent(acc) + '&bank_code=' + encodeURIComponent(code), {
+          headers: { Authorization: 'Bearer ' + env.PAYSTACK_SECRET_KEY }
+        });
+        const d = await safeJson(r);
+        if (!d.status) return Response.json({ error: d.message || 'Resolve failed' }, { status: 400 });
+        return Response.json({ account_name: d.data.account_name });
+      }
+
+      // ---------- REFERRAL: bind new landlord to agent ----------
+      if (url.pathname === '/api/referral/bind' && request.method === 'POST') {
+        const user = await authUser(env, request);
+        if (!user) return Response.json({ error: 'Sign in first.' }, { status: 401 });
+        const { code } = await request.json();
+        if (!code) return Response.json({ error: 'Missing code' }, { status: 400 });
+        const prefix = String(code).replace('AK-', '').toLowerCase();
+        const ar = await fetch(env.SUPABASE_URL + '/rest/v1/profiles?role=eq.agent&select=id', { headers: adminHeaders(env) });
+        const agents = await safeJson(ar);
+        let agentId = null;
+        (Array.isArray(agents) ? agents : []).forEach(a => { if (a.id.replace(/-/g, '').indexOf(prefix) === 0) agentId = a.id; });
+        if (!agentId) return Response.json({ error: 'Invalid referral code' }, { status: 404 });
+        await ensureProfile(env, user);
+        const up = await fetch(env.SUPABASE_URL + '/rest/v1/profiles?id=eq.' + user.id, {
+          method: 'PATCH', headers: adminHeaders(env),
+          body: JSON.stringify({ referred_by_agent_id: agentId, role: 'landlord' })
+        });
+        if (!up.ok) return Response.json({ error: 'Bind failed' }, { status: 500 });
+        return Response.json({ bound: true, agent_id: agentId });
+      }
+
       // ---------- PAYSTACK WEBHOOK ----------
       if (url.pathname === '/api/webhook' && request.method === 'POST') {
         const raw = await request.text();
