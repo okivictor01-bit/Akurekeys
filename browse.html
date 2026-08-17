@@ -18,6 +18,16 @@
  <p>Inspect before you pay. Rent protected in escrow. Landlord contact hidden until you unlock.</p>
  <div class="chips"><span class="chip">🔒 Escrow protected</span><span class="chip">✅ Admin verified</span><span class="chip">📅 Inspect first</span></div>
 </div>
+<div class="card">
+ <input id="q" type="search" placeholder="🔍 Search street / area in Akure (e.g. Oba Adesida, Ijoka)">
+ <select id="ftype">
+  <option value="">All property types</option>
+  <option value="room">room</option><option value="self_contain_room">self_contain_room</option>
+  <option value="room_and_parlour">room_and_parlour</option><option value="self_contain_room_and_parlour">self_contain_room_and_parlour</option>
+  <option value="two_bedroom_flat">two_bedroom_flat</option><option value="three_bedroom_flat">three_bedroom_flat</option>
+  <option value="duplex">duplex</option><option value="shop">shop</option><option value="office">office</option><option value="container">container</option>
+ </select>
+</div>
 <div id="authBox" class="card">
  <h2>Sign in to start</h2>
  <input id="email" type="email" placeholder="Email">
@@ -32,6 +42,7 @@
 <script>
 const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
 const EMO={room:'🛏️',self_contain_room:'🏠',room_and_parlour:'🛋️',self_contain_room_and_parlour:'🏠',two_bedroom_flat:'🏢',three_bedroom_flat:'🏬',duplex:'🏡',shop:'🏪',office:'💼',container:'📦'};
+let ALL=[];
 function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;m.classList.remove('hide');}
 async function session(){const{data}=await sb.auth.getSession();return data.session;}
 function showDetails(d){
@@ -45,12 +56,10 @@ function showDetails(d){
  '<div class="rowline"><span>📞 Contact</span><b>'+d.admin_contact+'</b></div>';
  c.scrollIntoView({behavior:'smooth'});
 }
-async function load(){
- const{data,error}=await sb.from('property_listings').select('*');
- if(error)return msg(false,'Listings error: '+error.message);
+function render(rows){
  const list=document.getElementById('list');list.innerHTML='';
- if(!data||data.length===0)return msg(false,'No approved properties yet.');
- data.forEach(p=>{
+ if(!rows||rows.length===0){list.innerHTML='<div class="card"><div class="muted">No properties match your search. Try another street or type.</div></div>';return;}
+ rows.forEach(p=>{
   const c=document.createElement('div');c.className='card';
   c.innerHTML='<div class="thumb">'+(EMO[p.property_type]||'🏠')+'</div><h2>'+p.title+'</h2>'+
   '<div class="muted">📍 '+(p.area_landmark||'Akure')+' • '+(p.bedrooms||'–')+' bed • '+(p.bathrooms||'–')+' bath</div>'+
@@ -61,6 +70,24 @@ async function load(){
   b2.onclick=async()=>{try{const{data:det,error:e2}=await sb.rpc('get_property_details',{p_id:p.id});if(e2)return msg(false,'🔒 '+e2.message);showDetails(det[0]);}catch(e){msg(false,'Error: '+e.message);}};
   c.appendChild(b1);c.appendChild(b2);list.appendChild(c);
  });
+}
+function applyFilters(){
+ const q=(document.getElementById('q').value||'').toLowerCase();
+ const t=document.getElementById('ftype').value;
+ render(ALL.filter(p=>{
+  const okType=!t||p.property_type===t;
+  const hay=((p.street_address||'')+' '+(p.area_landmark||'')+' '+(p.title||'')).toLowerCase();
+  const okQ=!q||hay.indexOf(q)!==-1;
+  return okType&&okQ;
+ }));
+}
+document.getElementById('q').addEventListener('input',applyFilters);
+document.getElementById('ftype').addEventListener('change',applyFilters);
+async function load(){
+ const{data,error}=await sb.from('property_listings').select('*');
+ if(error)return msg(false,'Listings error: '+error.message);
+ ALL=data||[];
+ applyFilters();
 }
 document.getElementById('signin').onclick=async()=>{try{const em=document.getElementById('email').value,pa=document.getElementById('pass').value;let{error}=await sb.auth.signInWithPassword({email:em,password:pa});if(error){({error}=await sb.auth.signUp({email:em,password:pa}));}if(error)return msg(false,error.message);document.getElementById('authBox').classList.add('hide');msg(true,'Signed in!');load();}catch(e){msg(false,'Error: '+e.message);}};
 (async()=>{try{
