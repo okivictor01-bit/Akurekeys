@@ -1,4 +1,4 @@
-// akurekeys worker v16 - 15-day all-access pass
+// akurekeys worker v18 - full purge of rented properties after 7 days
 const PAYSTACK = 'https://api.paystack.co';
 const enc = new TextEncoder();
 
@@ -64,6 +64,58 @@ async function platformUserId(env) {
   const r = await fetch(env.SUPABASE_URL + '/rest/v1/profiles?role=eq.admin&select=id&limit=1', { headers: adminHeaders(env) });
   const rows = await safeJson(r);
   return Array.isArray(rows) && rows.length ? rows[0].id : null;
+}
+
+async function delWhere(env, table, qs) {
+  const r = await fetch(env.SUPABASE_URL + '/rest/v1/' + table + '?' + qs, { method: 'DELETE', headers: adminHeaders(env) });
+  return r.ok;
+}
+
+async function purgeRented(env) {
+  const lr = await fetch(env.SUPABASE_URL + '/rest/v1/properties?status=eq.rented&select=id,photos,rented_at', { headers: adminHeaders(env) });
+  const props = await safeJson(lr);
+  if (!Array.isArray(props)) return 0;
+  const cutoff = Date.now() - 7 * 864e5;
+  let n = 0;
+  for (const p of props) {
+    if (!p.rented_at || new Date(p.rented_at).getTime() >= cutoff) continue;
+
+    if (Array.isArray(p.photos)) {
+      for (const u of p.photos) {
+        const part = String(u).split('/property-photos/')[1];
+        if (part) await fetch(env.SUPABASE_URL + '/storage/v1/object/property-photos/' + encodeURIComponent(part), { method: 'DELETE', headers: adminHeaders(env) });
+      }
+    }
+
+    const rr = await fetch(env.SUPABASE_URL + '/rest/v1/rentals?property_id=eq.' + p.id + '&select=id', { headers: adminHeaders(env) });
+    const rentals = await safeJson(rr);
+    const rids = (Array.isArray(rentals) ? rentals : []).map(x => x.id);
+
+    let eids = [];
+    if (rids.length) {
+      const er = await fetch(env.SUPABASE_URL + '/rest/v1/escrow_transactions?rental_id=in.(' + rids.join(',') + ')&select=id', { headers: adminHeaders(env) });
+      const esc = await safeJson(er);
+      eids = (Array.isArray(esc) ? esc : []).map(x => x.id);
+    }
+
+    let pids = [];
+    if (eids.length) {
+      const pr2 = await fetch(env.SUPABASE_URL + '/rest/v1/payouts?escrow_transaction_id=in.(' + eids.join(',') + ')&select=id', { headers: adminHeaders(env) });
+      const pay = await safeJson(pr2);
+      pids = (Array.isArray(pay) ? pay : []).map(x => x.id);
+    }
+
+    if (pids.length) await delWhere(env, 'agent_earnings', 'payout_id=in.(' + pids.join(',') + ')');
+    await delWhere(env, 'agent_earnings', 'property_id=eq.' + p.id);
+    if (pids.length) await delWhere(env, 'payouts', 'id=in.(' + pids.join(',') + ')');
+    if (eids.length) await delWhere(env, 'escrow_transactions', 'id=in.(' + eids.join(',') + ')');
+    if (rids.length) await delWhere(env, 'rentals', 'id=in.(' + rids.join(',') + ')');
+    await delWhere(env, 'inspections', 'property_id=eq.' + p.id);
+    await delWhere(env, 'property_access_fees', 'property_id=eq.' + p.id);
+    await delWhere(env, 'properties', 'id=eq.' + p.id);
+    n++;
+  }
+  return n;
 }
 
 async function flipPayment(env, reference) {
@@ -184,6 +236,30 @@ export default {
         return Response.json({ ok: true });
       }
 
+      // ---------- AUTO-PURGE (once per 12h, on traffic) ----------
+      try {
+        const mr = await fetch(env.SUPABASE_URL + '/rest/v1/purge_meta?id=eq.1&select=last_run', { headers: adminHeaders(env) });
+        const mrows = await safeJson(mr);
+        const last = (Array.isArray(mrows) && mrows.length) ? new Date(mrows[0].last_run).getTime() : 0;
+        if (Date.now() - last > 12 * 3600e3) {
+          await fetch(env.SUPABASE_URL + '/rest/v1/purge_meta', {
+            method: 'POST',
+            headers: Object.assign({}, adminHeaders(env), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
+            body: JSON.stringify({ id: 1, last_run: new Date().toISOString() })
+          });
+          await purgeRented(env);
+        }
+      } catch (e) {}
+
+      // ---------- ADMIN: purge old rented now ----------
+      if (url.pathname === '/api/admin/purge' && request.method === 'POST') {
+        const user = await authUser(env, request);
+        if (!user) return Response.json({ error: 'Sign in first.' }, { status: 401 });
+        if (!(await requireAdmin(env, user))) return Response.json({ error: 'Admins only.' }, { status: 403 });
+        const n = await purgeRented(env);
+        return Response.json({ purged: n });
+      }
+
       // ---------- NIGERIAN BANKS LIST ----------
       if (url.pathname === '/api/banks' && request.method === 'GET') {
         const r = await fetch(PAYSTACK + '/bank?country=nigeria&paystack=true', {
@@ -222,7 +298,7 @@ export default {
         await ensureProfile(env, user);
         const up = await fetch(env.SUPABASE_URL + '/rest/v1/profiles?id=eq.' + user.id, {
           method: 'PATCH', headers: adminHeaders(env),
-          body: JSON.stringify({ referred_by_agent_id: agentId, role: 'landlord' })
+        body: JSON.stringify({ referred_by_agent_id: agentId, role: 'landlord' })
         });
         if (!up.ok) return Response.json({ error: 'Bind failed' }, { status: 500 });
         return Response.json({ bound: true, agent_id: agentId });
@@ -242,7 +318,7 @@ export default {
         return Response.json({ received: true });
       }
 
-      // ---------- ACCESS PASS: ₦1,000 = ALL properties for 15 days ----------
+      // ---------- ACCESS PASS ----------
       if (url.pathname === '/api/fee/initialize' && request.method === 'POST') {
         const missing = ['SUPABASE_URL','SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY','PAYSTACK_SECRET_KEY'].filter(k => !env[k]);
         if (missing.length) return Response.json({ error: 'Missing env: ' + missing.join(', ') }, { status: 500 });
@@ -277,7 +353,49 @@ export default {
         return Response.json({ authorization_url: data.data.authorization_url, reference: reference });
       }
 
-      // ---------- LANDLORD: submit a property (agent auto-attached) ----------
+      // ---------- PHOTO UPLOAD ----------
+      if (url.pathname === '/api/photo/upload' && request.method === 'POST') {
+        const user = await authUser(env, request);
+        if (!user) return Response.json({ error: 'Sign in first.' }, { status: 401 });
+
+        const formData = await request.formData();
+        const file = formData.get('file');
+        const propertyId = formData.get('property_id');
+
+        if (!file || !propertyId) return Response.json({ error: 'Missing file or property_id' }, { status: 400 });
+
+        const filename = crypto.randomUUID() + '.' + String(file.name).split('.').pop();
+        const uploadRes = await fetch(env.SUPABASE_URL + '/storage/v1/object/property-photos/' + filename, {
+          method: 'POST',
+          headers: Object.assign({}, adminHeaders(env), { 'Content-Type': file.type, 'x-upsert': 'false' }),
+          body: file
+        });
+
+        if (!uploadRes.ok) return Response.json({ error: 'Upload failed: ' + (await uploadRes.text()).slice(0, 200) }, { status: 500 });
+
+        const publicUrl = env.SUPABASE_URL + '/storage/v1/object/public/property-photos/' + filename;
+
+        const pr = await fetch(env.SUPABASE_URL + '/rest/v1/properties?id=eq.' + propertyId + '&select=photos,landlord_id', { headers: adminHeaders(env) });
+        const props = await safeJson(pr);
+        if (!Array.isArray(props) || !props.length) return Response.json({ error: 'Property not found' }, { status: 404 });
+
+        const prop = props[0];
+        if (prop.landlord_id !== user.id) return Response.json({ error: 'Not your property' }, { status: 403 });
+
+        const photos = Array.isArray(prop.photos) ? prop.photos : [];
+        photos.push(publicUrl);
+
+        const up = await fetch(env.SUPABASE_URL + '/rest/v1/properties?id=eq.' + propertyId, {
+          method: 'PATCH', headers: adminHeaders(env),
+          body: JSON.stringify({ photos: photos })
+        });
+
+        if (!up.ok) return Response.json({ error: 'Update failed' }, { status: 500 });
+
+        return Response.json({ url: publicUrl, count: photos.length });
+      }
+
+      // ---------- LANDLORD: submit property ----------
       if (url.pathname === '/api/property/submit' && request.method === 'POST') {
         const user = await authUser(env, request);
         if (!user) return Response.json({ error: 'Sign in first.' }, { status: 401 });
@@ -312,17 +430,23 @@ export default {
         return Response.json({ done: true, status: 'pending', agent_attached: !!agentId });
       }
 
-      // ---------- ADMIN: approve / reject property ----------
+      // ---------- ADMIN: approve / reject / delete property ----------
       if (url.pathname === '/api/admin/property-decision' && request.method === 'POST') {
         const user = await authUser(env, request);
         if (!user) return Response.json({ error: 'Sign in first.' }, { status: 401 });
         if (!(await requireAdmin(env, user))) return Response.json({ error: 'Admins only.' }, { status: 403 });
         const { property_id, action } = await request.json();
         if (!property_id || !action) return Response.json({ error: 'Missing property_id or action' }, { status: 400 });
-        const newStatus = action === 'approve' ? 'approved' : (action === 'reject' ? 'rejected' : null);
-        if (!newStatus) return Response.json({ error: 'action must be approve or reject' }, { status: 400 });
+
+        let newStatus;
+        if (action === 'approve') newStatus = 'approved';
+        else if (action === 'reject') newStatus = 'rejected';
+        else if (action === 'delete') newStatus = 'deleted';
+        else return Response.json({ error: 'action must be approve, reject, or delete' }, { status: 400 });
+
         const body = { status: newStatus };
         if (newStatus === 'approved') body.approved_at = new Date().toISOString();
+
         const p = await fetch(env.SUPABASE_URL + '/rest/v1/properties?id=eq.' + property_id, {
           method: 'PATCH', headers: adminHeaders(env),
           body: JSON.stringify(body)
@@ -331,14 +455,14 @@ export default {
         return Response.json({ done: true, status: newStatus });
       }
 
-      // ---------- TENANT: release escrow → AUTOMATIC payouts ----------
+      // ---------- TENANT: release escrow → payouts + RENTED badge ----------
       if (url.pathname === '/api/rent/release' && request.method === 'POST') {
         const user = await authUser(env, request);
         if (!user) return Response.json({ error: 'Sign in first.' }, { status: 401 });
         const { escrow_id } = await request.json();
         if (!escrow_id) return Response.json({ error: 'Missing escrow_id' }, { status: 400 });
 
-        const er = await fetch(env.SUPABASE_URL + '/rest/v1/escrow_transactions?id=eq.' + escrow_id + '&select=id,tenant_id,status', { headers: adminHeaders(env) });
+        const er = await fetch(env.SUPABASE_URL + '/rest/v1/escrow_transactions?id=eq.' + escrow_id + '&select=id,tenant_id,status,rental_id', { headers: adminHeaders(env) });
         const escrows = await safeJson(er);
         if (!Array.isArray(escrows) || !escrows.length) return Response.json({ error: 'Escrow not found' }, { status: 404 });
         const escrow = escrows[0];
@@ -350,6 +474,17 @@ export default {
           body: JSON.stringify({ status: 'released', released_by: user.id, released_at: new Date().toISOString() })
         });
         if (!rel.ok) return Response.json({ error: 'Release failed: ' + (await rel.text()).slice(0, 200) }, { status: 500 });
+
+        if (escrow.rental_id) {
+          const rr = await fetch(env.SUPABASE_URL + '/rest/v1/rentals?id=eq.' + escrow.rental_id + '&select=property_id', { headers: adminHeaders(env) });
+          const rentals = await safeJson(rr);
+          if (Array.isArray(rentals) && rentals.length) {
+            await fetch(env.SUPABASE_URL + '/rest/v1/properties?id=eq.' + rentals[0].property_id, {
+              method: 'PATCH', headers: adminHeaders(env),
+              body: JSON.stringify({ status: 'rented', rented_at: new Date().toISOString() })
+            });
+          }
+        }
 
         const platformId = await platformUserId(env);
         const lr = await fetch(env.SUPABASE_URL + '/rest/v1/payouts?escrow_transaction_id=eq.' + escrow_id + '&select=id,status', { headers: adminHeaders(env) });
@@ -392,7 +527,7 @@ export default {
         return Response.json({ done: true, status: newStatus });
       }
 
-      // ---------- INSPECTION: book + pay (one property) ----------
+      // ---------- INSPECTION: book + pay ----------
       if (url.pathname === '/api/inspection/initialize' && request.method === 'POST') {
         const missing = ['SUPABASE_URL','SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY','PAYSTACK_SECRET_KEY'].filter(k => !env[k]);
         if (missing.length) return Response.json({ error: 'Missing env: ' + missing.join(', ') }, { status: 500 });
@@ -450,7 +585,7 @@ export default {
         const props = await safeJson(pr);
         if (!Array.isArray(props) || !props.length) return Response.json({ error: 'Property not found' }, { status: 404 });
         const prop = props[0];
-        if (prop.status !== 'approved') return Response.json({ error: 'Property not approved' }, { status: 400 });
+        if (prop.status !== 'approved') return Response.json({ error: 'Property not approved or already rented' }, { status: 400 });
 
         await ensureProfile(env, user);
 
