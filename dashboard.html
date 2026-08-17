@@ -67,7 +67,7 @@
 <script>
 const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
 let BANKS=[];
-function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;m.classList.remove('hide');}
+function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;m.classList.remove('hide');m.scrollIntoView({behavior:'smooth',block:'center'});}
 async function session(){const{data}=await sb.auth.getSession();return data.session;}
 function list(el,rows,fmt,empty){el.innerHTML='';if(!rows||!rows.length){el.innerHTML='<div class="muted">'+empty+'</div>';return;}rows.forEach(r=>{const d=document.createElement('div');d.className='rowline';d.innerHTML='<span>'+fmt(r)+'</span>';el.appendChild(d);});}
 const L=(href,txt)=>'<a style="color:#ffe9a8" href="'+href+'">'+txt+'</a>';
