@@ -33,7 +33,7 @@
  </div>
  <div id="addBox" class="card hide">
   <h2>🏗️ Add a property</h2>
-  <p class="muted">Goes to admin for approval before tenants can see it.</p>
+  <p class="muted">Goes to admin for approval. After it's approved, add photos from "My properties" below.</p>
   <input id="p_title" placeholder="Title e.g. Clean self-contain at Oba Adesida">
   <select id="p_type">
    <option value="room">room</option><option value="self_contain_room">self_contain_room</option>
@@ -132,7 +132,25 @@ async function render(){
   const pb=document.getElementById('propsBox');pb.classList.remove('hide');
   pb.innerHTML='<h2>🏠 My properties</h2>';
   const{data:props}=await sb.rpc('dashboard_properties');
-  list(pb,props,p=>'<b>'+p.title+'</b> • ₦'+Number(p.annual_rent_naira).toLocaleString()+'/yr • <span class="pill '+(p.status==='approved'?'':(p.status==='pending'?'gold':'red'))+'">'+p.status+'</span>','No properties yet.');
+  if(!props||!props.length){pb.innerHTML+='<div class="muted">No properties yet.</div>';}
+  (props||[]).forEach(p=>{
+   const d=document.createElement('div');d.className='rowline';
+   d.innerHTML='<span><b>'+p.title+'</b> • ₦'+Number(p.annual_rent_naira).toLocaleString()+'/yr • <span class="pill '+(p.status==='approved'?'':(p.status==='pending'?'gold':'red'))+'">'+p.status+'</span></span>';
+   pb.appendChild(d);
+   const wrap=document.createElement('div');wrap.style.marginBottom='10px';
+   const fi=document.createElement('input');fi.type='file';fi.accept='image/*';
+   const bb=document.createElement('button');bb.className='btn btn-ghost';bb.innerText='📷 Add photo';
+   bb.onclick=async()=>{try{
+    if(!fi.files||!fi.files[0])return msg(false,'Choose an image first.');
+    msg(true,'Uploading photo...');
+    const fd=new FormData();fd.append('file',fi.files[0]);fd.append('property_id',p.id);
+    const r=await fetch('/api/photo/upload',{method:'POST',headers:{Authorization:'Bearer '+s.access_token},body:fd});
+    const dd=await r.json();
+    if(!r.ok)return msg(false,dd.error||'Upload failed');
+    msg(true,'✅ Photo added ('+dd.count+' total). Tenants see it on browse instantly.');
+   }catch(e){msg(false,'Upload error: '+e.message);}};
+   wrap.appendChild(fi);wrap.appendChild(bb);pb.appendChild(wrap);
+  });
  }
  const ib=document.getElementById('inspBox');
  ib.innerHTML='<h2>📅 Inspections</h2>';
@@ -183,9 +201,9 @@ document.getElementById('signin').onclick=async()=>{try{
  if(error){({error}=await sb.auth.signUp({email:em,password:pa}));isNew=true;}
  if(error)return msg(false,error.message);
  document.getElementById('authBox').classList.add('hide');
- const s=await session();
+ const s2=await session();
  let bound=false;
- if(isNew&&localStorage.getItem('akure_ref'))bound=await bindReferral(s);
+ if(isNew&&localStorage.getItem('akure_ref'))bound=await bindReferral(s2);
  if(!bound)msg(true,'Welcome!');
  render();
 }catch(e){msg(false,'Error: '+e.message);}};
