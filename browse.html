@@ -15,7 +15,7 @@
 </div>
 <div class="hero">
  <h1>Find your next home in Akure 🏡</h1>
- <p>One ₦1,000 pass unlocks EVERY listing for 15 days. Inspect before you pay. Rent protected in escrow.</p>
+ <p>One ₦1,000 pass unlocks EVERY listing for 15 days. Exact addresses appear only after your inspection is confirmed. Rent protected in escrow.</p>
  <div class="chips"><span class="chip">🔓 15-day all-access pass</span><span class="chip">🔒 Escrow protected</span><span class="chip">✅ Admin verified</span><span class="chip">📅 Inspect first</span></div>
 </div>
 <div class="card">
@@ -54,15 +54,16 @@ async function loadPass(){
   document.getElementById('passExp').innerText=new Date(data[0].expires_at).toLocaleDateString();
  }
 }
-function showDetails(d){
+function showDetails(d,pid){
  const c=document.getElementById('detailCard');
  c.classList.remove('hide');
  c.innerHTML='<span class="pill gold">✅ UNLOCKED</span><h2 style="margin-top:8px">'+d.title+'</h2>'+
- '<div class="rowline"><span>📍 Address</span><b>'+d.street_address+(d.area_landmark?' • '+d.area_landmark:'')+'</b></div>'+
+ '<div class="rowline"><span>📍 Area</span><b>'+(d.area_landmark||'Akure')+' — exact address revealed at inspection</b></div>'+
  '<div class="rowline"><span>🏷️ Type</span><b>'+d.property_type+'</b></div>'+
  '<div class="rowline"><span>💰 Rent</span><b class="price">₦'+Number(d.annual_rent_naira).toLocaleString()+'/yr</b></div>'+
  '<div class="rowline"><span>🛏️ Beds / 🛁 Baths</span><b>'+(d.bedrooms==null?'–':d.bedrooms)+' / '+(d.bathrooms==null?'–':d.bathrooms)+'</b></div>'+
- '<div class="rowline"><span>📞 Contact</span><b>'+d.admin_contact+'</b></div>';
+ '<div class="rowline"><span>📞 Contact</span><b>'+d.admin_contact+'</b></div>'+
+ '<a href="/inspect.html?property='+pid+'" style="text-decoration:none"><button class="btn btn-primary">📅 Book inspection</button></a>';
  c.scrollIntoView({behavior:'smooth'});
 }
 function render(rows){
@@ -76,7 +77,7 @@ function render(rows){
   const b1=document.createElement('button');b1.className='btn btn-gold';b1.innerText='🔓 Unlock ALL • ₦1,000 (15 days)';
   b1.onclick=async()=>{try{const s=await session();if(!s)return msg(false,'Sign in first.');msg(true,'Creating your 15-day access pass...');const r=await fetch('/api/fee/initialize',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({})});const t=await r.text();let d;try{d=JSON.parse(t);}catch(e){return msg(false,'Non-JSON: '+t.slice(0,150));}if(!r.ok)return msg(false,d.error||t.slice(0,150));if(d.already_paid){return msg(true,'✅ You already have an active 15-day pass — tap "View details" on any listing.');}window.location.href=d.authorization_url;}catch(e){msg(false,'Error: '+e.message);}};
   const b2=document.createElement('button');b2.className='btn btn-ghost';b2.innerText='View details (if unlocked)';
-  b2.onclick=async()=>{try{const{data:det,error:e2}=await sb.rpc('get_property_details',{p_id:p.id});if(e2)return msg(false,'🔒 '+e2.message);showDetails(det[0]);}catch(e){msg(false,'Error: '+e.message);}};
+  b2.onclick=async()=>{try{const{data:det,error:e2}=await sb.rpc('get_property_details',{p_id:p.id});if(e2)return msg(false,'🔒 '+e2.message);showDetails(det[0],p.id);}catch(e){msg(false,'Error: '+e.message);}};
   c.appendChild(b1);c.appendChild(b2);list.appendChild(c);
  });
 }
