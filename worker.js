@@ -1,4 +1,4 @@
-};// akurekeys worker v15 - Nigerian banks + account name resolution
+// akurekeys worker v15 - Nigerian banks + account name resolution
 const PAYSTACK = 'https://api.paystack.co';
 const enc = new TextEncoder();
 
