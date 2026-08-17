@@ -23,7 +23,9 @@
 <div id="msg" class="msg hide"></div>
 <div id="adminBox" class="hide">
  <div class="hero"><h1>Control room 👑</h1><p>Approve properties • confirm inspections • release payouts. <a href="#" id="signout" style="color:#ffe9a8">switch account</a></p></div>
+ <div class="card"><button id="purge" class="btn btn-gray">🧹 Purge rented properties older than 7 days</button></div>
  <div id="propList"></div>
+ <div id="allProps"></div>
  <div id="list"></div>
  <div id="payList"></div>
  <div class="footer">With great power… 🔑</div>
@@ -31,7 +33,7 @@
 </div>
 <script>
 const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
-function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;m.classList.remove('hide');}
+function msg(ok,t){const m=document.getElementById('msg');m.className='msg '+(ok?'ok':'err');m.innerText=t;m.classList.remove('hide');m.scrollIntoView({behavior:'smooth',block:'center'});}
 async function session(){const{data}=await sb.auth.getSession();return data.session;}
 async function tryAdmin(){
  const s=await session();if(!s)return false;
@@ -39,6 +41,16 @@ async function tryAdmin(){
  return data&&data.role==='admin';
 }
 function cardRow(html){const c=document.createElement('div');c.className='card';c.innerHTML=html;return c;}
+async function actProperty(property_id,action,after){
+ try{
+  const s=await session();
+  const r=await fetch('/api/admin/property-decision',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({property_id:property_id,action:action})});
+  const d=await r.json();
+  if(!r.ok)return msg(false,d.error||'Failed');
+  msg(true,'Property '+d.status+'.');
+  after();
+ }catch(e){msg(false,'Error: '+e.message);}
+}
 async function loadProps(){
  const{data,error}=await sb.rpc('admin_list_pending_properties');
  const wrap=document.getElementById('propList');wrap.innerHTML='';
@@ -50,9 +62,22 @@ async function loadProps(){
   const row=document.createElement('div');row.className='btnrow';
   const b1=document.createElement('button');b1.className='btn btn-primary';b1.innerText='Approve';
   const b2=document.createElement('button');b2.className='btn btn-danger';b2.innerText='Reject';
-  const act=async(action)=>{try{const s=await session();const r=await fetch('/api/admin/property-decision',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({property_id:p.property_id,action:action})});const d=await r.json();if(!r.ok)return msg(false,d.error||'Failed');msg(true,'Property '+d.status+'.');loadProps();}catch(e){msg(false,'Error: '+e.message);}};
-  b1.onclick=()=>act('approve');b2.onclick=()=>act('reject');
+  b1.onclick=()=>actProperty(p.property_id,'approve',()=>{loadProps();loadAll();});
+  b2.onclick=()=>actProperty(p.property_id,'reject',()=>{loadProps();loadAll();});
   row.appendChild(b1);row.appendChild(b2);c.appendChild(row);wrap.appendChild(c);
+ });
+}
+async function loadAll(){
+ const{data,error}=await sb.rpc('admin_list_properties');
+ const wrap=document.getElementById('allProps');wrap.innerHTML='';
+ const h=cardRow('<h2>🏘️ All properties</h2>');wrap.appendChild(h);
+ if(error){h.innerHTML+='<div class="muted">Load error: '+error.message+'</div>';return;}
+ if(!data||!data.length){h.innerHTML+='<div class="muted">None.</div>';return;}
+ data.forEach(p=>{
+  const c=cardRow('<div class="rowline"><span><b>'+p.title+'</b><br><span class="muted">'+(p.landlord_email||'—')+' • ₦'+Number(p.annual_rent_naira).toLocaleString()+'/yr</span></span><span class="pill '+(p.status==='approved'?'':(p.status==='rented'?'gold':'red'))+'">'+p.status+'</span></div>');
+  const b=document.createElement('button');b.className='btn btn-danger';b.innerText='🗑️ Delete property';
+  b.onclick=()=>{if(!confirm('Delete "'+p.title+'"? It disappears from the marketplace.'))return;actProperty(p.property_id,'delete',()=>{loadAll();loadProps();});};
+  c.appendChild(b);wrap.appendChild(c);
  });
 }
 async function loadList(){
@@ -88,9 +113,18 @@ async function loadPayouts(){
   wrap.appendChild(c);
  });
 }
-document.getElementById('signin').onclick=async()=>{try{await sb.auth.signOut();const{error}=await sb.auth.signInWithPassword({email:document.getElementById('email').value,password:document.getElementById('pass').value});if(error)return msg(false,error.message);const ok=await tryAdmin();if(!ok)return msg(false,'This account is not an admin.');document.getElementById('authBox').classList.add('hide');document.getElementById('adminBox').classList.remove('hide');msg(true,'Welcome, Admin 👑');loadProps();loadList();loadPayouts();}catch(e){msg(false,'Error: '+e.message);}};
+document.getElementById('purge').onclick=async()=>{try{
+ const s=await session();
+ msg(true,'Purging...');
+ const r=await fetch('/api/admin/purge',{method:'POST',headers:{Authorization:'Bearer '+s.access_token}});
+ const d=await r.json();
+ if(!r.ok)return msg(false,d.error||'Purge failed');
+ msg(true,'🧹 Purged '+d.purged+' rented propert'+(d.purged===1?'y':'ies')+' (photos + all data erased).');
+ loadAll();loadProps();
+}catch(e){msg(false,'Error: '+e.message);}};
+document.getElementById('signin').onclick=async()=>{try{await sb.auth.signOut();const{error}=await sb.auth.signInWithPassword({email:document.getElementById('email').value,password:document.getElementById('pass').value});if(error)return msg(false,error.message);const ok=await tryAdmin();if(!ok)return msg(false,'This account is not an admin.');document.getElementById('authBox').classList.add('hide');document.getElementById('adminBox').classList.remove('hide');msg(true,'Welcome, Admin 👑');loadProps();loadAll();loadList();loadPayouts();}catch(e){msg(false,'Error: '+e.message);}};
 document.getElementById('signout').onclick=async(e)=>{e.preventDefault();await sb.auth.signOut();location.reload();};
-(async()=>{try{if(await tryAdmin()){document.getElementById('authBox').classList.add('hide');document.getElementById('adminBox').classList.remove('hide');loadProps();loadList();loadPayouts();}}catch(e){}})();
+(async()=>{try{if(await tryAdmin()){document.getElementById('authBox').classList.add('hide');document.getElementById('adminBox').classList.remove('hide');loadProps();loadAll();loadList();loadPayouts();}}catch(e){}})();
 </script>
 </body>
 </html>
