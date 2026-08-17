@@ -1,4 +1,4 @@
-// akurekeys worker v15 - Nigerian banks + account name resolution
+// akurekeys worker v16 - 15-day all-access pass
 const PAYSTACK = 'https://api.paystack.co';
 const enc = new TextEncoder();
 
@@ -69,9 +69,9 @@ async function platformUserId(env) {
 async function flipPayment(env, reference) {
   let dbUpdated = false;
   if (reference.startsWith('AKF_')) {
-    const p = await fetch(env.SUPABASE_URL + '/rest/v1/property_access_fees?paystack_reference=eq.' + encodeURIComponent(reference), {
+    const p = await fetch(env.SUPABASE_URL + '/rest/v1/access_passes?paystack_reference=eq.' + encodeURIComponent(reference), {
       method: 'PATCH', headers: adminHeaders(env),
-      body: JSON.stringify({ status: 'paid', paid_at: new Date().toISOString() })
+      body: JSON.stringify({ status: 'paid', paid_at: new Date().toISOString(), expires_at: new Date(Date.now() + 15 * 864e5).toISOString() })
     });
     dbUpdated = p.ok;
   }
@@ -242,6 +242,41 @@ export default {
         return Response.json({ received: true });
       }
 
+      // ---------- ACCESS PASS: ₦1,000 = ALL properties for 15 days ----------
+      if (url.pathname === '/api/fee/initialize' && request.method === 'POST') {
+        const missing = ['SUPABASE_URL','SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY','PAYSTACK_SECRET_KEY'].filter(k => !env[k]);
+        if (missing.length) return Response.json({ error: 'Missing env: ' + missing.join(', ') }, { status: 500 });
+        const user = await authUser(env, request);
+        if (!user) return Response.json({ error: 'Sign in first.' }, { status: 401 });
+
+        await ensureProfile(env, user);
+
+        const ex = await fetch(env.SUPABASE_URL + '/rest/v1/access_passes?tenant_id=eq.' + user.id + '&select=id,status,paystack_reference,expires_at&order=created_at.desc&limit=1', { headers: adminHeaders(env) });
+        const rows = await safeJson(ex);
+        if (Array.isArray(rows) && rows.length > 0) {
+          const r0 = rows[0];
+          if (r0.status === 'paid' && r0.expires_at && new Date(r0.expires_at).getTime() > Date.now()) {
+            return Response.json({ already_paid: true });
+          }
+          if (r0.status === 'initiated') {
+            const data = await initialize(env, user.email, 1000 * 100, r0.paystack_reference, url.origin + '/browse.html');
+            if (!data.status) return Response.json({ error: data.message || 'Initialize failed' }, { status: 400 });
+            return Response.json({ authorization_url: data.data.authorization_url, reference: r0.paystack_reference });
+          }
+        }
+
+        const reference = 'AKF_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+        const ins = await fetch(env.SUPABASE_URL + '/rest/v1/access_passes', {
+          method: 'POST', headers: adminHeaders(env),
+          body: JSON.stringify({ tenant_id: user.id, amount_naira: 1000, paystack_reference: reference })
+        });
+        if (!ins.ok) return Response.json({ error: 'DB insert failed: ' + (await ins.text()).slice(0, 200) }, { status: 500 });
+
+        const data = await initialize(env, user.email, 1000 * 100, reference, url.origin + '/browse.html');
+        if (!data.status) return Response.json({ error: data.message || 'Initialize failed' }, { status: 400 });
+        return Response.json({ authorization_url: data.data.authorization_url, reference: reference });
+      }
+
       // ---------- LANDLORD: submit a property (agent auto-attached) ----------
       if (url.pathname === '/api/property/submit' && request.method === 'POST') {
         const user = await authUser(env, request);
@@ -357,7 +392,7 @@ export default {
         return Response.json({ done: true, status: newStatus });
       }
 
-      // ---------- INSPECTION: book + pay ----------
+      // ---------- INSPECTION: book + pay (one property) ----------
       if (url.pathname === '/api/inspection/initialize' && request.method === 'POST') {
         const missing = ['SUPABASE_URL','SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY','PAYSTACK_SECRET_KEY'].filter(k => !env[k]);
         if (missing.length) return Response.json({ error: 'Missing env: ' + missing.join(', ') }, { status: 500 });
@@ -398,38 +433,6 @@ export default {
         if (!ins.ok) return Response.json({ error: 'DB insert failed: ' + (await ins.text()).slice(0, 200) }, { status: 500 });
 
         const data = await initialize(env, user.email, fee * 100, reference, url.origin + '/inspect.html');
-        if (!data.status) return Response.json({ error: data.message || 'Initialize failed' }, { status: 400 });
-        return Response.json({ authorization_url: data.data.authorization_url, reference: reference });
-      }
-
-      // ---------- ACCESS FEE ----------
-      if (url.pathname === '/api/fee/initialize' && request.method === 'POST') {
-        const missing = ['SUPABASE_URL','SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY','PAYSTACK_SECRET_KEY'].filter(k => !env[k]);
-        if (missing.length) return Response.json({ error: 'Missing env: ' + missing.join(', ') }, { status: 500 });
-        const user = await authUser(env, request);
-        if (!user) return Response.json({ error: 'Sign in first.' }, { status: 401 });
-        const { property_id } = await request.json();
-        if (!property_id) return Response.json({ error: 'Missing property_id' }, { status: 400 });
-
-        await ensureProfile(env, user);
-
-        const ex = await fetch(env.SUPABASE_URL + '/rest/v1/property_access_fees?tenant_id=eq.' + user.id + '&property_id=eq.' + property_id + '&select=id,status,paystack_reference', { headers: adminHeaders(env) });
-        const rows = await safeJson(ex);
-        if (Array.isArray(rows) && rows.length > 0) {
-          if (rows[0].status === 'paid') return Response.json({ already_paid: true });
-          const data = await initialize(env, user.email, 1000 * 100, rows[0].paystack_reference, url.origin + '/browse.html');
-          if (!data.status) return Response.json({ error: data.message || 'Initialize failed' }, { status: 400 });
-          return Response.json({ authorization_url: data.data.authorization_url, reference: rows[0].paystack_reference });
-        }
-
-        const reference = 'AKF_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-        const ins = await fetch(env.SUPABASE_URL + '/rest/v1/property_access_fees', {
-          method: 'POST', headers: adminHeaders(env),
-          body: JSON.stringify({ tenant_id: user.id, property_id: property_id, amount_naira: 1000, paystack_reference: reference })
-        });
-        if (!ins.ok) return Response.json({ error: 'DB insert failed: ' + (await ins.text()).slice(0, 200) }, { status: 500 });
-
-        const data = await initialize(env, user.email, 1000 * 100, reference, url.origin + '/browse.html');
         if (!data.status) return Response.json({ error: data.message || 'Initialize failed' }, { status: 400 });
         return Response.json({ authorization_url: data.data.authorization_url, reference: reference });
       }
