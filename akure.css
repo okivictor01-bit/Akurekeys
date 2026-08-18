@@ -11,14 +11,14 @@ body{font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:var(--bg);c
 .wrap{max-width:520px;margin:0 auto}
 .topbar{display:flex;align-items:center;gap:10px;margin:4px 2px 14px}
 .logo{width:42px;height:42px;border-radius:12px;background:url('/icon.png') center/cover no-repeat #0a5c3a;font-size:0;box-shadow:var(--shadow)}
-.brandlogo{width:100%;max-width:280px;display:block;margin:0 auto 14px}
+.brandlogo{width:100%;max-width:280px;display:block;margin:0 auto 14px;mix-blend-mode:multiply}
 .brand{font-weight:800;font-size:18px}
 .brand small{display:block;font-weight:600;color:var(--muted);font-size:11px}
-.hero{background:linear-gradient(135deg,rgba(14,122,76,.86) 0%,rgba(10,92,58,.92) 70%),url('/hero.jpg') center/cover no-repeat;color:#fff;border-radius:var(--radius);padding:22px 18px;box-shadow:var(--shadow);margin-bottom:14px}
+.hero{background:linear-gradient(160deg,rgba(14,122,76,.55) 0%,rgba(10,92,58,.82) 100%),url('/hero.jpg') center/cover no-repeat;color:#fff;border-radius:var(--radius);padding:22px 18px;box-shadow:var(--shadow);margin-bottom:14px;text-shadow:0 1px 6px rgba(0,0,0,.35)}
 .hero h1{margin:0 0 6px;font-size:24px;line-height:1.15}
-.hero p{margin:0;opacity:.9;font-size:13px}
+.hero p{margin:0;opacity:.95;font-size:13px}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-.chip{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);padding:6px 10px;border-radius:999px;font-size:11px;font-weight:600}
+.chip{background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.35);padding:6px 10px;border-radius:999px;font-size:11px;font-weight:600}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);margin:0 0 14px}
 .card h2{margin:0 0 4px;font-size:16px}
 .muted{color:var(--muted);font-size:12.5px}
