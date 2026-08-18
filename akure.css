@@ -10,7 +10,8 @@
 body{font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:var(--bg);color:var(--ink);margin:0;padding:14px;-webkit-font-smoothing:antialiased}
 .wrap{max-width:520px;margin:0 auto}
 .topbar{display:flex;align-items:center;gap:10px;margin:4px 2px 14px}
-.logo{width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,var(--gold),#ffd75e);display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:var(--shadow)}
+.logo{width:42px;height:42px;border-radius:12px;background:url('/icon.png') center/cover no-repeat #0a5c3a;font-size:0;box-shadow:var(--shadow)}
+.brandlogo{width:100%;max-width:280px;display:block;margin:0 auto 14px}
 .brand{font-weight:800;font-size:18px}
 .brand small{display:block;font-weight:600;color:var(--muted);font-size:11px}
 .hero{background:linear-gradient(135deg,var(--brand) 0%,var(--brand-dark) 70%);color:#fff;border-radius:var(--radius);padding:22px 18px;box-shadow:var(--shadow);margin-bottom:14px}
