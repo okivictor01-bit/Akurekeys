@@ -34,7 +34,7 @@
  </div>
  <div id="addBox" class="card hide">
   <h2>🏗️ Add a property</h2>
-  <p class="muted">Goes to admin for approval. After it's approved, add photos from "My properties" below.</p>
+  <p class="muted">Goes to admin for approval. Add photos now (or later from "My properties").</p>
   <input id="p_title" placeholder="Title e.g. Clean self-contain at Oba Adesida">
   <select id="p_type">
    <option value="room">room</option><option value="self_contain_room">self_contain_room</option>
@@ -47,6 +47,8 @@
   <input id="p_land" placeholder="Area / landmark">
   <input id="p_desc" placeholder="Short description">
   <div class="btnrow"><input id="p_bed" type="number" placeholder="Beds"><input id="p_bath" type="number" placeholder="Baths"></div>
+  <label class="muted">📷 Property photos (up to 5)</label>
+  <input id="p_files" type="file" accept="image/*" multiple>
   <button id="submitProp" class="btn btn-gold">Submit for approval</button>
  </div>
  <div id="bankBox" class="card hide">
@@ -105,6 +107,15 @@ async function tryResolve(){
   else msg(false,'Could not verify account: '+(d.error||'unknown'));
  }catch(e){}
 }
+async function uploadPhotosFor(pid,files,token){
+ let ok=0;
+ for(const f of files){
+  const fd=new FormData();fd.append('file',f);fd.append('property_id',pid);
+  const r=await fetch('/api/photo/upload',{method:'POST',headers:{Authorization:'Bearer '+token},body:fd});
+  if(r.ok)ok++;
+ }
+ return ok;
+}
 async function render(){
  const s=await session();
  const{data:prof}=await sb.from('profiles').select('role,full_name').eq('id',s.user.id).maybeSingle();
@@ -144,11 +155,8 @@ async function render(){
    bb.onclick=async()=>{try{
     if(!fi.files||!fi.files[0])return msg(false,'Choose an image first.');
     msg(true,'Uploading photo...');
-    const fd=new FormData();fd.append('file',fi.files[0]);fd.append('property_id',p.id);
-    const r=await fetch('/api/photo/upload',{method:'POST',headers:{Authorization:'Bearer '+s.access_token},body:fd});
-    const dd=await r.json();
-    if(!r.ok)return msg(false,dd.error||'Upload failed');
-    msg(true,'✅ Photo added ('+dd.count+' total). Tenants see it on browse instantly.');
+    const n=await uploadPhotosFor(p.id,fi.files,s.access_token);
+    msg(n>0,'✅ '+n+' photo(s) added. Tenants see them on browse instantly.');
    }catch(e){msg(false,'Upload error: '+e.message);}};
    wrap.appendChild(fi);wrap.appendChild(bb);pb.appendChild(wrap);
   });
@@ -179,12 +187,23 @@ document.getElementById('copyRef').onclick=async()=>{try{
 }catch(e){msg(false,'Your link: '+location.origin+'/dashboard.html?ref='+document.getElementById('refCode').innerText);}};
 document.getElementById('submitProp').onclick=async()=>{try{
  const s=await session();
+ const files=document.getElementById('p_files').files;
  const body={title:document.getElementById('p_title').value,property_type:document.getElementById('p_type').value,annual_rent_naira:document.getElementById('p_rent').value,street_address:document.getElementById('p_addr').value,area_landmark:document.getElementById('p_land').value,description:document.getElementById('p_desc').value,bedrooms:document.getElementById('p_bed').value,bathrooms:document.getElementById('p_bath').value};
  msg(true,'Submitting...');
  const r=await fetch('/api/property/submit',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify(body)});
  const d=await r.json();
  if(!r.ok)return msg(false,d.error||'Failed');
- msg(true,'✅ Submitted! Waiting for admin approval.');render();
+ if(files&&files.length){
+  const{data:props}=await sb.rpc('dashboard_properties');
+  const mine=(props||[]).filter(x=>x.title===body.title);
+  if(mine.length){
+   const n=await uploadPhotosFor(mine[0].id,files,s.access_token);
+   msg(true,'✅ Submitted with '+n+' photo(s)! Waiting for admin approval.');
+  }else msg(true,'✅ Submitted! Waiting for admin approval.');
+ }else{
+  msg(true,'✅ Submitted! Waiting for admin approval.');
+ }
+ render();
 }catch(e){msg(false,'Error: '+e.message);}};
 document.getElementById('saveBank').onclick=async()=>{try{
  const s=await session();
