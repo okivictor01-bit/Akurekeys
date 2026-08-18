@@ -14,9 +14,9 @@ body{font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:var(--bg);c
 .brandlogo{width:100%;max-width:280px;display:block;margin:0 auto 14px}
 .brand{font-weight:800;font-size:18px}
 .brand small{display:block;font-weight:600;color:var(--muted);font-size:11px}
-.hero{background:linear-gradient(135deg,var(--brand) 0%,var(--brand-dark) 70%);color:#fff;border-radius:var(--radius);padding:22px 18px;box-shadow:var(--shadow);margin-bottom:14px}
+.hero{background:linear-gradient(135deg,rgba(14,122,76,.86) 0%,rgba(10,92,58,.92) 70%),url('/hero.jpg') center/cover no-repeat;color:#fff;border-radius:var(--radius);padding:22px 18px;box-shadow:var(--shadow);margin-bottom:14px}
 .hero h1{margin:0 0 6px;font-size:24px;line-height:1.15}
-.hero p{margin:0;opacity:.85;font-size:13px}
+.hero p{margin:0;opacity:.9;font-size:13px}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .chip{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);padding:6px 10px;border-radius:999px;font-size:11px;font-weight:600}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);margin:0 0 14px}
