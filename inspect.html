@@ -31,7 +31,7 @@
 <div class="footer">Inspect first. Rent second. Regret never.</div>
 </div>
 <script>
-const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGttenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
+const sb=supabase.createClient('https://esisngduhutxkmztlodh.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzaXNuZ2R1aHV0eGtzenRsb2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMjYxMDQsImV4cCI6MjEwMDYwMjEwNH0.743riPefSqsSSBTcOZVHkoqLc-xmjsOI60XJ5Sp4mK4');
 const PILL={requested:'gold',confirmed:'',completed:'',cancelled:'red'};
 let fees={};
 let CARDS={};
@@ -64,7 +64,7 @@ async function load(){
    const nb=document.createElement('div');nb.className='muted';nb.style.marginTop='8px';nb.innerText='This home has been rented 🎉';
    c.appendChild(nb);
   }else{
-   c.innerHTML+='<label class="muted">Pick date & time</label><input type="datetime-local" id="dt_'+p.id+'">';
+   c.innerHTML+='<label class="muted" style="display:block;font-weight:800;text-transform:uppercase;letter-spacing:1px;font-size:11px;margin-top:8px">Pick date & time</label><input type="datetime-local" id="dt_'+p.id+'">';
    const b=document.createElement('button');b.className='btn btn-gold';b.innerText='📅 Book & pay ₦'+fee.toLocaleString();
    b.onclick=async()=>{try{const s=await session();if(!s)return msg(false,'Sign in first.');const dt=document.getElementById('dt_'+p.id).value;if(!dt)return msg(false,'Pick a date & time first.');msg(true,'Creating inspection...');const r=await fetch('/api/inspection/initialize',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({property_id:p.id,preferred_date:dt})});const t=await r.text();let d;try{d=JSON.parse(t);}catch(e){return msg(false,'Non-JSON: '+t.slice(0,150));}if(!r.ok)return msg(false,d.error||t.slice(0,150));if(d.already_booked){return msg(true,'Already booked for this property — awaiting admin.');}window.location.href=d.authorization_url;}catch(e){msg(false,'Error: '+e.message);}};
    c.appendChild(b);
