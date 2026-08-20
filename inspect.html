@@ -5,12 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AkureKeys — Inspections</title>
 <link rel="stylesheet" href="/akure.css">
+<link rel="icon" href="/icon.png">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 <div class="wrap">
 <div class="topbar">
- <div class="logo">📅</div>
+ <div class="logo">🔑</div>
  <div class="brand">AkureKeys<small>Book an inspection</small></div>
 </div>
 <div class="hero">
@@ -18,10 +19,11 @@
  <p>Pick a date, pay the inspection fee, and our admin confirms your slot. The exact address is shared once your inspection is confirmed.</p>
 </div>
 <div id="authBox" class="card">
- <h2>Sign in to book</h2>
+ <h2>Welcome</h2>
  <input id="email" type="email" placeholder="Email">
  <input id="pass" type="password" placeholder="Password">
- <button id="signin" class="btn btn-primary">Sign in / Create account</button>
+ <button id="signin" class="btn btn-primary">Sign in</button>
+ <button id="signup" class="btn btn-gold">Create account</button>
 </div>
 <div id="msg" class="msg hide"></div>
 <div id="myBox" class="card hide"><h2>📅 My inspections</h2><div id="myList"></div></div>
@@ -44,26 +46,46 @@ async function loadMy(uid){
 }
 async function load(){
  CARDS={};
+ const want=new URLSearchParams(location.search).get('property');
  const{data}=await sb.from('inspection_fee_schedule').select('*');
  (data||[]).forEach(f=>fees[f.property_type]=Number(f.fee_naira));
  const{data:props,error}=await sb.from('property_listings').select('*');
  if(error)return msg(false,'Listings error: '+error.message);
+ const rows=want?(props||[]).filter(p=>p.id===want):(props||[]);
  const list=document.getElementById('list');list.innerHTML='';
- (props||[]).forEach(p=>{
+ if(want&&!rows.length){list.innerHTML='<div class="card"><div class="muted">This property is no longer available for inspection.</div></div>';return;}
+ rows.forEach(p=>{
   const fee=fees[p.property_type]||1000;
   const c=document.createElement('div');c.className='card';
-  c.innerHTML='<h2>'+p.title+'</h2><div class="muted">'+p.property_type+' • 📍 '+(p.area_landmark||'Akure')+'</div>'+
-  '<div class="rowline" style="margin-top:6px"><span>Inspection fee</span><b class="price">₦'+fee.toLocaleString()+'</b></div>'+
-  '<label class="muted">Pick date & time</label><input type="datetime-local" id="dt_'+p.id+'">';
-  const b=document.createElement('button');b.className='btn btn-gold';b.innerText='📅 Book & pay ₦'+fee.toLocaleString();
-  b.onclick=async()=>{try{const s=await session();if(!s)return msg(false,'Sign in first.');const dt=document.getElementById('dt_'+p.id).value;if(!dt)return msg(false,'Pick a date & time first.');msg(true,'Creating inspection...');const r=await fetch('/api/inspection/initialize',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({property_id:p.id,preferred_date:dt})});const t=await r.text();let d;try{d=JSON.parse(t);}catch(e){return msg(false,'Non-JSON: '+t.slice(0,150));}if(!r.ok)return msg(false,d.error||t.slice(0,150));if(d.already_booked){return msg(true,'Already booked for this property — awaiting admin.');}window.location.href=d.authorization_url;}catch(e){msg(false,'Error: '+e.message);}};
-  c.appendChild(b);list.appendChild(c);
+  const thumb=(p.photos&&p.photos.length)?'<img src="'+p.photos[0]+'" style="width:100%;height:130px;object-fit:cover;border-radius:14px;margin-bottom:10px">':'';
+  c.innerHTML=thumb+'<h2>'+p.title+'</h2><div class="muted">'+p.property_type+' • 📍 '+(p.area_landmark||'Akure')+'</div>'+
+  '<div class="rowline" style="margin-top:6px"><span>Inspection fee</span><b class="price">₦'+fee.toLocaleString()+'</b></div>';
+  if(p.status==='rented'){
+   const nb=document.createElement('div');nb.className='muted';nb.style.marginTop='8px';nb.innerText='This home has been rented 🎉';
+   c.appendChild(nb);
+  }else{
+   c.innerHTML+='<label class="muted">Pick date & time</label><input type="datetime-local" id="dt_'+p.id+'">';
+   const b=document.createElement('button');b.className='btn btn-gold';b.innerText='📅 Book & pay ₦'+fee.toLocaleString();
+   b.onclick=async()=>{try{const s=await session();if(!s)return msg(false,'Sign in first.');const dt=document.getElementById('dt_'+p.id).value;if(!dt)return msg(false,'Pick a date & time first.');msg(true,'Creating inspection...');const r=await fetch('/api/inspection/initialize',{method:'POST',headers:{Authorization:'Bearer '+s.access_token,'Content-Type':'application/json'},body:JSON.stringify({property_id:p.id,preferred_date:dt})});const t=await r.text();let d;try{d=JSON.parse(t);}catch(e){return msg(false,'Non-JSON: '+t.slice(0,150));}if(!r.ok)return msg(false,d.error||t.slice(0,150));if(d.already_booked){return msg(true,'Already booked for this property — awaiting admin.');}window.location.href=d.authorization_url;}catch(e){msg(false,'Error: '+e.message);}};
+   c.appendChild(b);
+  }
+  list.appendChild(c);
   CARDS[p.id]=c;
  });
- const want=new URLSearchParams(location.search).get('property');
  if(want&&CARDS[want]){CARDS[want].scrollIntoView({behavior:'smooth',block:'center'});CARDS[want].style.outline='3px solid #f2b70a';}
 }
-document.getElementById('signin').onclick=async()=>{try{const em=document.getElementById('email').value,pa=document.getElementById('pass').value;let{error}=await sb.auth.signInWithPassword({email:em,password:pa});if(error){({error}=await sb.auth.signUp({email:em,password:pa}));}if(error)return msg(false,error.message);document.getElementById('authBox').classList.add('hide');const s=await session();msg(true,'Signed in!');loadMy(s.user.id);load();}catch(e){msg(false,'Error: '+e.message);}};
+document.getElementById('signin').onclick=async()=>{try{
+ const{error}=await sb.auth.signInWithPassword({email:document.getElementById('email').value,password:document.getElementById('pass').value});
+ if(error)return msg(false,error.message);
+ document.getElementById('authBox').classList.add('hide');const s=await session();msg(true,'Welcome back!');loadMy(s.user.id);load();
+}catch(e){msg(false,'Error: '+e.message);}};
+document.getElementById('signup').onclick=async()=>{try{
+ const{error}=await sb.auth.signUp({email:document.getElementById('email').value,password:document.getElementById('pass').value});
+ if(error)return msg(false,error.message);
+ const s=await session();
+ if(!s)return msg(true,'Account created! Check your email to confirm, then sign in.');
+ document.getElementById('authBox').classList.add('hide');msg(true,'Account created — welcome!');loadMy(s.user.id);load();
+}catch(e){msg(false,'Error: '+e.message);}};
 (async()=>{try{
  const ref=new URLSearchParams(location.search).get('reference');
  const s=await session();
